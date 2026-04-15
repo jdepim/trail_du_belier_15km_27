@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan d'Entraînement — Bélier Trail 15 km</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<style>
+:root {
+  --mountain: #3a1f2e;
+  --peak: #5c3047;
+  --snow: #fdf0f4;
+  --trail: #e8a0b8;
+  --rose-dark: #c4607a;
+  --rose-mid: #e8a0b8;
+  --rose-light: #f9dce6;
+  --rock: #b89aa6;
+  --accent: #d4547a;
+  --bg: #fdf5f7;
+  --card: #ffffff;
+  --muted: #8a6a76;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--mountain);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* HERO */
+.hero {
+  background: linear-gradient(135deg, #3a1f2e 0%, #5c3047 50%, #7a3d5c 100%);
+  color: var(--snow);
+  padding: 4rem 2rem 3rem;
+  position: relative;
+  overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 80px;
+  background: var(--bg);
+  clip-path: polygon(0 100%, 100% 100%, 100% 30%, 70% 80%, 40% 20%, 20% 70%, 0 40%);
+}
+/* Rose poudré glow overlay */
+.hero::after {
+  content: '';
+  position: absolute;
+  top: -40%; right: -10%;
+  width: 500px; height: 500px;
+  background: radial-gradient(circle, rgba(232,160,184,0.18) 0%, transparent 70%);
+  pointer-events: none;
+}
+.hero-inner { max-width: 1060px; margin: 0 auto; position: relative; z-index: 1; }
+.hero-eyebrow {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--trail);
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.hero-eyebrow::before {
+  content: '';
+  display: inline-block;
+  width: 32px;
+  height: 1px;
+  background: var(--trail);
+}
+.hero h1 {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(3.5rem, 10vw, 7rem);
+  line-height: 0.95;
+  letter-spacing: 0.02em;
+  margin-bottom: 1.5rem;
+}
+.hero h1 span { color: var(--trail); }
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(232,160,184,0.18);
+  border: 1px solid rgba(232,160,184,0.35);
+  border-radius: 20px;
+  padding: 6px 16px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--trail);
+  margin-bottom: 1.5rem;
+}
+.hero-stats {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+.hero-stat-val {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 2.2rem;
+  color: var(--trail);
+  line-height: 1;
+}
+.hero-stat-label {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--rock);
+  margin-top: 2px;
+}
+.mountain-deco {
+  position: absolute;
+  top: 0; right: 0;
+  width: 320px;
+  height: 100%;
+  opacity: 0.05;
+}
+
+/* LAYOUT */
+.container { max-width: 1060px; margin: 0 auto; padding: 0 2rem; }
+
+/* NAV TABS */
+.nav-tabs {
+  background: var(--card);
+  border-bottom: 1px solid #f0dde5;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 12px rgba(58,31,46,0.08);
+}
+.nav-tabs-inner {
+  max-width: 1060px;
+  margin: 0 auto;
+  padding: 0 2rem;
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #f0dde5 transparent;
+}
+.nav-tabs-inner::-webkit-scrollbar { height: 3px; }
+.nav-tabs-inner::-webkit-scrollbar-thumb { background: #f0dde5; border-radius: 2px; }
+.nav-tab {
+  padding: 0.875rem 0.875rem;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: color 0.2s, border-color 0.2s;
+  font-family: 'DM Sans', sans-serif;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  min-height: 44px;
+  -webkit-appearance: none;
+  appearance: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.nav-tab:hover { color: var(--mountain); }
+.nav-tab.active { color: var(--mountain); border-bottom-color: var(--accent); }
+
+/* PANELS */
+.panel { display: none; padding: 2.5rem 0 4rem; }
+.panel.active { display: block; }
+
+/* SECTION TITLES */
+.section-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 2rem;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+  color: var(--mountain);
+}
+.section-sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 2rem;
+  line-height: 1.6;
+}
+
+/* KPI CARDS */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 2.5rem;
+}
+.kpi-card {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 1.25rem 1rem;
+  text-align: center;
+  border: 1px solid #f0dde5;
+}
+.kpi-val {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 2.5rem;
+  color: var(--accent);
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.kpi-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* PHASE GRID */
+.phase-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 2.5rem;
+}
+.phase-card {
+  border-radius: 12px;
+  padding: 1.25rem;
+  border: 1px solid transparent;
+}
+.phase-card.p1 { background: #fce8f0; border-color: #f0b8cc; }
+.phase-card.p2 { background: #f5e8f5; border-color: #ddb8dd; }
+.phase-card.p3 { background: #fdf3e8; border-color: #f0d8a8; }
+.phase-card.p4 { background: #e8f4fd; border-color: #b8d9f0; }
+.phase-num {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 2rem;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.p1 .phase-num { color: #c0406a; }
+.p2 .phase-num { color: #8a2a8a; }
+.p3 .phase-num { color: #a07020; }
+.p4 .phase-num { color: #1a6fa0; }
+.phase-name { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+.phase-weeks { font-size: 11px; color: var(--muted); }
+
+/* CHART */
+.chart-wrap {
+  background: var(--card);
+  border-radius: 12px;
+  border: 1px solid #f0dde5;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+.chart-title {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 1rem;
+}
+.chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 120px;
+}
+.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
+.bar { width: 100%; border-radius: 4px 4px 0 0; transition: opacity 0.2s; cursor: pointer; }
+.bar:hover { opacity: 0.8; }
+.bar-label { font-size: 9px; color: var(--muted); text-align: center; }
+
+/* PHASE HEADERS */
+.phase-header-box {
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  border-left: 4px solid;
+}
+.ph-p1 { background: #fce8f0; border-color: #c0406a; }
+.ph-p2 { background: #f5e8f5; border-color: #8a2a8a; }
+.ph-p3 { background: #fdf3e8; border-color: #a07020; }
+.ph-p4 { background: #e8f4fd; border-color: #1a6fa0; }
+.ph-eyebrow { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 500; margin-bottom: 6px; }
+.ph-p1 .ph-eyebrow { color: #c0406a; }
+.ph-p2 .ph-eyebrow { color: #8a2a8a; }
+.ph-p3 .ph-eyebrow { color: #a07020; }
+.ph-p4 .ph-eyebrow { color: #1a6fa0; }
+.ph-title { font-family: 'Bebas Neue', sans-serif; font-size: 1.8rem; letter-spacing: 0.03em; margin-bottom: 6px; }
+.ph-desc { font-size: 13px; line-height: 1.65; color: #4a5568; }
+
+/* WEEK CARDS */
+.week-card {
+  background: var(--card);
+  border-radius: 12px;
+  border: 1px solid #f0dde5;
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+.week-head {
+  padding: 0.875rem 1.25rem;
+  background: #fdf8fa;
+  border-bottom: 1px solid #f0dde5;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.week-title { font-size: 13px; font-weight: 500; }
+.week-km {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.2rem;
+  color: var(--accent);
+  letter-spacing: 0.03em;
+}
+.week-recup .week-head { background: #f9f5f7; }
+.week-sessions { padding: 0.75rem 1.25rem; display: flex; flex-direction: column; gap: 8px; }
+.session { display: grid; grid-template-columns: 72px 110px 1fr; gap: 12px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid #fae8f0; }
+.session:last-child { border-bottom: none; }
+.sess-day { font-size: 11px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding-top: 4px; }
+.sess-badge {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+  text-align: center;
+  display: block;
+  width: 100%;
+}
+.b-run { background: #fce8f0; color: #a0305a; }
+.b-cote { background: #f5e8f5; color: #7a1a8a; }
+.b-frac { background: #fff0db; color: #8a5a1a; }
+.b-musc { background: #e8f0fd; color: #1a4a8a; }
+.b-long { background: #ffe8db; color: #8a3010; }
+.b-recup { background: #f5f0f0; color: #6a5a5a; }
+.b-race { background: var(--accent); color: white; }
+.b-nuit { background: #2a1a38; color: #e8a0b8; }
+.sess-text { font-size: 13px; line-height: 1.55; color: #3a4a5a; padding-top: 3px; }
+
+/* MUSCU */
+.muscu-intro {
+  background: var(--mountain);
+  color: var(--snow);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.muscu-intro h3 { font-family: 'Bebas Neue', sans-serif; font-size: 1.5rem; letter-spacing: 0.03em; margin-bottom: 6px; color: var(--trail); }
+.muscu-intro p { font-size: 13px; line-height: 1.65; color: #d0b8c4; }
+.muscu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+.muscu-card { background: var(--card); border-radius: 12px; border: 1px solid #f0dde5; padding: 1.25rem; }
+.muscu-card-title { font-size: 13px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--mountain); margin-bottom: 1rem; padding-bottom: 8px; border-bottom: 2px solid var(--accent); }
+.exo { margin-bottom: 10px; }
+.exo:last-child { margin-bottom: 0; }
+.exo-name { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+.exo-detail { font-size: 12px; color: var(--muted); line-height: 1.55; }
+
+.muscu-phase-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--trail);
+  background: var(--mountain);
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+  margin-top: 1.5rem;
+}
+
+/* CONSEILS */
+.tip-list { display: flex; flex-direction: column; gap: 1rem; }
+.tip-card {
+  background: var(--card);
+  border-radius: 12px;
+  border: 1px solid #f0dde5;
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.tip-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--mountain);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.tip-title { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+.tip-text { font-size: 13px; color: #4a5568; line-height: 1.65; }
+
+.urgent-box {
+  background: var(--accent);
+  color: white;
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1rem;
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.urgent-box .tip-title { color: white; }
+.urgent-box .tip-text { color: rgba(255,255,255,0.88); }
+
+.night-box {
+  background: #2a1a38;
+  color: var(--snow);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1rem;
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.night-box .tip-title { color: var(--trail); }
+.night-box .tip-text { color: #d0b8c4; }
+
+/* LEGEND */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 1.5rem;
+}
+.leg-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.leg-dot { width: 8px; height: 8px; border-radius: 2px; }
+
+/* FOOTER */
+.footer {
+  background: var(--mountain);
+  color: var(--rock);
+  text-align: center;
+  padding: 2rem;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+}
+.footer span { color: var(--trail); }
+
+@media (max-width: 700px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .phase-grid { grid-template-columns: repeat(2, 1fr); }
+  .muscu-grid { grid-template-columns: 1fr; }
+  .hero h1 { font-size: 3.5rem; }
+  .session { grid-template-columns: 60px 90px 1fr; gap: 8px; }
+}
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<div class="hero">
+  <svg class="mountain-deco" viewBox="0 0 320 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <polygon points="160,20 320,380 0,380" fill="white"/>
+    <polygon points="80,100 220,380 0,380" fill="white" opacity="0.5"/>
+    <polygon points="240,60 320,200 200,380 320,380" fill="white" opacity="0.3"/>
+  </svg>
+  <div class="hero-inner">
+    <div class="hero-eyebrow">Plan d'entraînement · La Clusaz 2026</div>
+    <h1>Bélier<br><span>Trail</span><br>15 km</h1>
+    <div class="hero-badge">Vendredi soir · Départ 19h15 · Course au coucher de soleil</div>
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="hero-stat-val">15</div><div class="hero-stat-label">Kilomètres</div></div>
+      <div class="hero-stat"><div class="hero-stat-val">650</div><div class="hero-stat-label">Mètres D+</div></div>
+      <div class="hero-stat"><div class="hero-stat-val">18</div><div class="hero-stat-label">Semaines</div></div>
+      <div class="hero-stat"><div class="hero-stat-val">21.08</div><div class="hero-stat-label">Date course</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- NAV -->
+<div class="nav-tabs">
+  <div class="nav-tabs-inner">
+    <button class="nav-tab active" data-tab="overview">Vue d'ensemble</button>
+    <button class="nav-tab" data-tab="p1">P1 — Fondation</button>
+    <button class="nav-tab" data-tab="p2">P2 — Développement</button>
+    <button class="nav-tab" data-tab="p3">P3 — Spécifique</button>
+    <button class="nav-tab" data-tab="p4">P4 — Affûtage</button>
+    <button class="nav-tab" data-tab="muscu">Renforcement</button>
+    <button class="nav-tab" data-tab="conseils">Conseils clés</button>
+  </div>
+</div>
+
+<!-- OVERVIEW -->
+<div id="tab-overview" class="panel active">
+<div class="container">
+  <p class="section-sub" style="margin-top:2rem;">Profil coureur : 15 km/semaine sur plat, expérience semi-marathon. Objectif : finir le Bélier Trail 15 km de nuit dans les barrières horaires, en profitant du coucher de soleil sur les Aravis. 3 séances/semaine : 2 runs + 1 muscu.</p>
+
+  <div class="kpi-grid">
+    <div class="kpi-card"><div class="kpi-val">18</div><div class="kpi-label">Semaines de prep</div></div>
+    <div class="kpi-card"><div class="kpi-val">3</div><div class="kpi-label">Séances / sem</div></div>
+    <div class="kpi-card"><div class="kpi-val">28</div><div class="kpi-label">Km max / semaine</div></div>
+    <div class="kpi-card"><div class="kpi-val">3h15</div><div class="kpi-label">Objectif temps</div></div>
+  </div>
+
+  <div class="chart-wrap">
+    <div class="chart-title">Progression du volume hebdomadaire (km)</div>
+    <div class="chart-bars" id="chart-bars"></div>
+    <div style="display:flex;justify-content:space-between;margin-top:6px;">
+      <span style="font-size:10px;color:var(--muted)">S1</span>
+      <span style="font-size:10px;color:var(--muted)">S6</span>
+      <span style="font-size:10px;color:var(--muted)">S11</span>
+      <span style="font-size:10px;color:var(--muted)">S16</span>
+      <span style="font-size:10px;color:var(--muted)">S18</span>
+    </div>
+  </div>
+
+  <div class="phase-grid">
+    <div class="phase-card p1">
+      <div class="phase-num" style="color:#c0406a;">01</div>
+      <div class="phase-name">Fondation</div>
+      <div class="phase-weeks">Sem 1–5 · 15 avr → 18 mai</div>
+      <div style="font-size:12px;color:#8a406a;margin-top:8px;line-height:1.5;">Adapter le corps, introduire les côtes, poser les bases musculaires.</div>
+    </div>
+    <div class="phase-card p2">
+      <div class="phase-num" style="color:#8a2a8a;">02</div>
+      <div class="phase-name">Développement</div>
+      <div class="phase-weeks">Sem 6–11 · 19 mai → 29 juin</div>
+      <div style="font-size:12px;color:#6a1a6a;margin-top:8px;line-height:1.5;">Monter en volume, fractionné côtes, sorties longues 14–16 km.</div>
+    </div>
+    <div class="phase-card p3">
+      <div class="phase-num" style="color:#a07020;">03</div>
+      <div class="phase-name">Spécifique</div>
+      <div class="phase-weeks">Sem 12–16 · 30 juin → 3 août</div>
+      <div style="font-size:12px;color:#7a5010;margin-top:8px;line-height:1.5;">Simuler les conditions de course + entraînement nocturne à la frontale.</div>
+    </div>
+    <div class="phase-card p4">
+      <div class="phase-num" style="color:#1a6fa0;">04</div>
+      <div class="phase-name">Affûtage</div>
+      <div class="phase-weeks">Sem 17–18 · 4 → 21 août</div>
+      <div style="font-size:12px;color:#1a4a7a;margin-top:8px;line-height:1.5;">Réduire le volume, arriver frais et confiant le soir J.</div>
+    </div>
+  </div>
+
+  <!-- Spécificités course -->
+  <div style="background:var(--mountain);border-radius:12px;padding:1.5rem;color:var(--snow);margin-bottom:1.5rem;">
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:1.4rem;letter-spacing:0.03em;color:var(--trail);margin-bottom:1rem;">Spécificités de la course</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;flex-wrap:wrap;">
+      <div><div style="font-size:11px;color:var(--rock);margin-bottom:4px;letter-spacing:0.08em;text-transform:uppercase;">Départ</div><div style="font-size:14px;font-weight:500;">Vendredi 21 août · 19h15</div></div>
+      <div><div style="font-size:11px;color:var(--rock);margin-bottom:4px;letter-spacing:0.08em;text-transform:uppercase;">Matériel obligatoire</div><div style="font-size:14px;font-weight:500;">Frontale + téléphone + gobelet</div></div>
+      <div><div style="font-size:11px;color:var(--rock);margin-bottom:4px;letter-spacing:0.08em;text-transform:uppercase;">Bâtons</div><div style="font-size:14px;font-weight:500;color:#f0a0a0;">Interdits sur ce trail</div></div>
+    </div>
+  </div>
+
+  <!-- Barrières horaires -->
+  <div style="background:var(--card);border-radius:12px;border:1px solid #f0dde5;padding:1.5rem;">
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:1.4rem;letter-spacing:0.03em;color:var(--mountain);margin-bottom:1rem;">Barrières horaires</div>
+    <div style="display:flex;flex-wrap:wrap;gap:1.5rem;">
+      <div><div style="font-size:12px;color:var(--muted);margin-bottom:2px;">Crêt du Merle</div><div style="font-size:1.3rem;font-weight:500;font-family:'Bebas Neue',sans-serif;color:var(--accent);">21h10</div></div>
+      <div><div style="font-size:12px;color:var(--muted);margin-bottom:2px;">Arrivée village</div><div style="font-size:1.3rem;font-weight:500;font-family:'Bebas Neue',sans-serif;color:var(--accent);">22h30</div></div>
+      <div><div style="font-size:12px;color:var(--muted);margin-bottom:2px;">Durée max</div><div style="font-size:1.3rem;font-weight:500;font-family:'Bebas Neue',sans-serif;color:var(--accent);">3h15</div></div>
+      <div><div style="font-size:12px;color:var(--muted);margin-bottom:2px;">Ravitaillements</div><div style="font-size:1.3rem;font-weight:500;font-family:'Bebas Neue',sans-serif;color:var(--accent);">3</div></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- PHASE 1 -->
+<div id="tab-p1" class="panel">
+<div class="container">
+  <div class="section-title">Phase 1 — Fondation</div>
+  <p class="section-sub">Semaines 1–5 · 15 avril → 18 mai · Objectif 15 → 20 km/sem<br>Tout en endurance fondamentale. Introduire les côtes progressivement. Poser les bases musculaires.</p>
+  <div class="phase-header-box ph-p1">
+    <div class="ph-eyebrow">Objectifs de la phase</div>
+    <div class="ph-desc">Passer de 15 à 20 km/sem · Habituer les tendons et articulations · Intégrer la technique de marche active en montée · Première séances de renforcement musculaire</div>
+  </div>
+  <div class="legend">
+    <div class="leg-item"><div class="leg-dot" style="background:#e89ab0;"></div>Endurance</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#c890d0;"></div>Run côtes</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#e8a870;"></div>Sortie longue</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#90aadc;"></div>Muscu</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#c0b0b8;"></div>Repos actif</div>
+  </div>
+
+  <div class="week-card">
+    <div class="week-head"><span class="week-title">Semaine 1 · 15 avril</span><span class="week-km">~16 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Lundi</span><span class="sess-badge b-musc">Muscu</span><span class="sess-text">Circuit poids du corps 30 min — squat, fentes, gainage, mollets (voir onglet Renforcement)</span></div>
+      <div class="session"><span class="sess-day">Mercredi</span><span class="sess-badge b-run">Endurance</span><span class="sess-text">7 km facile en endurance fondamentale (allure conversationnelle)</span></div>
+      <div class="session"><span class="sess-day">Samedi</span><span class="sess-badge b-run">Endurance</span><span class="sess-text">9 km facile, terrain plat, inclure 2×100 m en montée si possible</span></div>
+    </div>
+  </div>
+
+  <div class="week-card">
+    <div class="week-head"><span class="week-title">Semaine 2 · 22 avril</span><span class="week-km">~17 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Lundi</span><span class="sess-badge b-musc">Muscu</span><span class="sess-text">Circuit poids du corps 35 min + gainage — planche latérale 2×30 s</span></div>
+      <div class="session"><span class="sess-day">Mercredi</span><span class="sess-badge b-run">Endurance</span><span class="sess-text">8 km facile dont 1 km en montée (côte de ville, répété 2×)</span></div>
+      <div class="session"><span class="sess-day">Samedi</span><span class="sess-badge b-run">Endurance</span><span class="sess-text">9 km facile avec 2×300 m de montée — marche active si pente raide</span></div>
+    </div>
+  </div>
+
+  <div class="week-card">
+    <div class="week-head"><span class="week-title">Semaine 3 · 29 avril</span><span class="week-km">~18 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Lundi</span><span class="sess-badge b-musc">Muscu</span><span class="sess-text">Circuit 35 min — progression en reps, ajouter single-leg deadlift 3×10</span></div>
+      <div class="session"><span class="sess-day">Mercredi</span><span class="sess-badge b-cote">Côtes</span><span class="sess-text">8 km avec 6×1 min d'effort en montée (récup descente joggée)</span></div>
+      <div class="session"><span class="sess-day">Samedi</span><span class="sess-badge b-long">Sortie longue</span><span class="sess-text">10 km endurance fondamentale — première vraie sortie longue, sac à dos si possible</span></div>
+    </div>
+  </div>
+
+  <div class="week-card week-recup">
+    <div class="week-head"><span class="week-title">⟳ Semaine 4 · 6 mai — Récupération</span><span class="week-km">~13 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Lundi</span><span class="sess-badge b-recup">Repos actif</span><span class="sess-text">Stretching, marche 30 min ou vélo léger — ne pas courir</span></div>
+      <div class="session"><span class="sess-day">Mercredi</span><span class="sess-badge b-run">Endurance</span><span class="sess-text">6 km très facile, aucune côte — jambes légères</span></div>
+      <div class="session"><span class="sess-day">Samedi</span><span class="sess-badge b-run">Endurance</span><span class="sess-text">7 km facile — écoute ton corps, semaine de consolidation</span></div>
+    </div>
+  </div>
+
+  <div class="week-card">
+    <div class="week-head"><span class="week-title">Semaine 5 · 13 mai</span><span class="week-km">~20 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Lundi</span><span class="sess-badge b-musc">Muscu</span><span class="sess-text">Circuit 40 min — introduction des squats excentriques lents (descente 4 s)</span></div>
+      <div class="session"><span class="sess-day">Mercredi</span><span class="sess-badge b-cote">Côtes</span><span class="sess-text">8 km avec 8×1 min côtes, travail montée + descente contrôlée active</span></div>
+      <div class="session"><span class="sess-day">Samedi</span><span class="sess-badge b-long">Sortie longue</span><span class="sess-text">12 km endurance, chercher un peu de relief — alterner marche et course en côte</span></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- PHASE 2 -->
+<div id="tab-p2" class="panel">
+<div class="container">
+  <div class="section-title">Phase 2 — Développement</div>
+  <p class="section-sub">Semaines 6–11 · 19 mai → 29 juin · Objectif 20 → 26 km/sem<br>Fractionné côtes, sorties longues 14–16 km, renforcement excentrique pour les descentes. Semaine de récupération en S9.</p>
+  <div class="phase-header-box ph-p2">
+    <div class="ph-eyebrow">Objectifs de la phase</div>
+    <div class="ph-desc">Atteindre 24–26 km/sem · Intégrer le fractionné côtes · Allonger les sorties longues · Renforcer les quadriceps en excentrique · Première sortie nocturne en S11</div>
+  </div>
+
+  <div class="week-card">
+    <div class="week-head"><span class="week-title">Semaine 6 · 19 mai</span><span class="week-km">~21 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Mardi</span><span class="sess-badge b-musc">Muscu</span><span class="sess-text">Circuit force 40 min avec haltères — squats, fentes bulgares, step-ups sur marche</span></div>
+      <div class="session"><span class="sess-day">Jeudi</span><span class="sess-badge b-cote">Côtes</span><span class="sess-text">9 km dont 8×1 min 30 s en montée soutenue (récup descente joggée) — échauffement 15 min</span></div>
+      <div class="session"><span class="sess-day">Dimanche</span><span class="sess-badge b-long">Sortie longue</span><span class="sess-text">12 km endurance, 150 m D+ accumulé si côtes disponibles — marcher les montées > 8%</span></div>
+    </div>
+  </div>
+
+  <div class="week-card">
+    <div class="week-head"><span class="week-title">Semaine 7 · 26 mai</span><span class="week-km">~22 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Mardi</span><span class="sess-badge b-musc">Muscu</span><span class="sess-text">Circuit force 45 min — focus excentrique : squat lent 4 s, step-down sur marche</span></div>
+      <div class="session"><span class="sess-day">Jeudi</span><span class="sess-badge b-cote">Côtes</span><span class="sess-text">9 km avec 3×4 min en montée à allure tempo, récup 3 min jogging plat</span></div>
+      <div class="session"><span class="sess-day">Dimanche</span><span class="sess-badge b-long">Sortie longue</span><span class="sess-text">13 km endurance — inclure montées marchées et descentes courides lentement</span></div>
+    </div>
+  </div>
+
+  <div class="week-card">
+    <div class="week-head"><span class="week-title">Semaine 8 · 2 juin</span><span class="week-km">~23 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Mardi</span><span class="sess-badge b-musc">Muscu</span><span class="sess-text">Circuit complet 45 min — gainage latéral, single-leg deadlift, box step-up haltères</span></div>
+      <div class="session"><span class="sess-day">Jeudi</span><span class="sess-badge b-frac">Fractionné</span><span class="sess-text">10 km avec 5×2 min 30 s côtes intensité 80% + descente contrôlée active</span></div>
+      <div class="session"><span class="sess-day">Dimanche</span><span class="sess-badge b-long">Sortie longue</span><span class="sess-text">13 km — simuler gestion de course : marcher les pentes raides, pousser les faux-plats</span></div>
+    </div>
+  </div>
+
+  <div class="week-card week-recup">
+    <div class="week-head"><span class="week-title">⟳ Semaine 9 · 9 juin — Récupération</span><span class="week-km">~15 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Mardi</span><span class="sess-badge b-recup">Repos actif</span><span class="sess-text">Vélo, natation ou marche 40 min — jambes légères, aucun effort cardio</span></div>
+      <div class="session"><span class="sess-day">Jeudi</span><span class="sess-badge b-run">Endurance</span><span class="sess-text">7 km très facile, aucune intensité</span></div>
+      <div class="session"><span class="sess-day">Dimanche</span><span class="sess-badge b-run">Endurance</span><span class="sess-text">8 km endurance douce avec quelques côtes légères pour garder les sensations</span></div>
+    </div>
+  </div>
+
+  <div class="week-card">
+    <div class="week-head"><span class="week-title">Semaine 10 · 16 juin</span><span class="week-km">~24 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Mardi</span><span class="sess-badge b-musc">Muscu</span><span class="sess-text">Circuit force 45 min — charge progressive sur squats et fentes avec haltères</span></div>
+      <div class="session"><span class="sess-day">Jeudi</span><span class="sess-badge b-cote">Côtes</span><span class="sess-text">10 km avec 2×(4×1 min 30 s côtes), récup marche-jogging entre séries</span></div>
+      <div class="session"><span class="sess-day">Dimanche</span><span class="sess-badge b-long">Sortie longue</span><span class="sess-text">14 km — sac trail 1 L, tester la gestion hydratation et nutrition (gel/barre)</span></div>
+    </div>
+  </div>
+
+  <div class="week-card">
+    <div class="week-head"><span class="week-title">Semaine 11 · 23 juin — Première sortie nocturne</span><span class="week-km">~26 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Mardi</span><span class="sess-badge b-musc">Muscu</span><span class="sess-text">Séance intense 45 min — circuits combinés force + cardio (mountain climbers, jump squat)</span></div>
+      <div class="session"><span class="sess-day">Jeudi</span><span class="sess-badge b-frac">Fractionné</span><span class="sess-text">10 km avec 3×4 min à allure course (seuil), dont 2 blocs en montée</span></div>
+      <div class="session"><span class="sess-day">Vendredi</span><span class="sess-badge b-nuit">Sortie nuit</span><span class="sess-text">Première sortie avec frontale ! 6 km facile à partir de 20h00 — tester le matériel, repères visuels, rythme nocturne</span></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- PHASE 3 -->
+<div id="tab-p3" class="panel">
+<div class="container">
+  <div class="section-title">Phase 3 — Spécifique</div>
+  <p class="section-sub">Semaines 12–16 · 30 juin → 3 août · Objectif 24–28 km/sem<br>Simuler les conditions réelles : dénivelé, terrain, et entraînements en soirée avec frontale. Sortie clé de 16–17 km D+ en semaine 15.</p>
+  <div class="phase-header-box ph-p3">
+    <div class="ph-eyebrow">Objectifs de la phase</div>
+    <div class="ph-desc">Sortie longue de 16–17 km avec dénivelé · 2 sorties nocturnes à la frontale · Affiner nutrition et matériel · Maîtriser la stratégie course (allure soir, frontale) · Musculation en maintenance · Semaine de récupération S14</div>
+  </div>
+
+  <div class="week-card">
+    <div class="week-head"><span class="week-title">Semaine 12 · 30 juin</span><span class="week-km">~25 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Mardi</span><span class="sess-badge b-musc">Muscu</span><span class="sess-text">Maintenance 35 min — priorité aux excentriques descente et gainage statique</span></div>
+      <div class="session"><span class="sess-day">Jeudi</span><span class="sess-badge b-cote">Côtes</span><span class="sess-text">10 km avec séance pyramidale : 2-3-4-3-2 min côtes intensité 80–85%, récup jogging plat</span></div>
+      <div class="session"><span class="sess-day">Dimanche</span><span class="sess-badge b-long">Long spécifique</span><span class="sess-text">15 km avec 300 m D+ minimum — si possible en vraie nature. Tester le ravitaillement complet.</span></div>
+    </div>
+  </div>
+
+  <div class="week-card">
+    <div class="week-head"><span class="week-title">Semaine 13 · 7 juillet</span><span class="week-km">~26 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Mardi</span><span class="sess-badge b-musc">Muscu</span><span class="sess-text">Maintenance 35 min — single-leg focus, chevilles, chaîne postérieure</span></div>
+      <div class="session"><span class="sess-day">Jeudi</span><span class="sess-badge b-frac">Seuil</span><span class="sess-text">10 km avec 3×5 min seuil (allure semi-marathon), 2 min récup — terrain vallonné si possible</span></div>
+      <div class="session"><span class="sess-day">Vendredi</span><span class="sess-badge b-nuit">Sortie nuit</span><span class="sess-text">8 km à partir de 20h30 avec frontale — simuler heure de course, tester rythme nocturne sur côtes</span></div>
+    </div>
+  </div>
+
+  <div class="week-card week-recup">
+    <div class="week-head"><span class="week-title">⟳ Semaine 14 · 14 juillet — Récupération</span><span class="week-km">~16 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Mardi</span><span class="sess-badge b-recup">Repos actif</span><span class="sess-text">Natation, yoga ou vélo — mobilité des articulations, étirements profonds</span></div>
+      <div class="session"><span class="sess-day">Jeudi</span><span class="sess-badge b-run">Endurance</span><span class="sess-text">8 km très facile, jambes fraîches — profiter du 14 juillet !</span></div>
+      <div class="session"><span class="sess-day">Dimanche</span><span class="sess-badge b-run">Endurance</span><span class="sess-text">8 km endurance, quelques relances légères de 30 s pour garder les sensations</span></div>
+    </div>
+  </div>
+
+  <div class="week-card" style="border:2px solid var(--accent);">
+    <div class="week-head" style="background:#fdf0f4;"><span class="week-title">⭐ Semaine 15 · 21 juillet — Semaine clé</span><span class="week-km">~28 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Mardi</span><span class="sess-badge b-musc">Muscu</span><span class="sess-text">Dernière vraie séance force — excentriques + gainage + proprioception cheville</span></div>
+      <div class="session"><span class="sess-day">Jeudi</span><span class="sess-badge b-cote">Côtes</span><span class="sess-text">10 km avec 10×1 min côtes — intensité max sur chaque répétition, récup totale en descente</span></div>
+      <div class="session"><span class="sess-day">Dimanche</span><span class="sess-badge b-long">Long spécifique</span><span class="sess-text">17 km avec 500–600 m D+ — sortie la plus importante du plan. Idéalement en montagne. Sac complet, frontale dans le sac.</span></div>
+    </div>
+  </div>
+
+  <div class="week-card">
+    <div class="week-head"><span class="week-title">Semaine 16 · 28 juillet</span><span class="week-km">~25 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Mardi</span><span class="sess-badge b-run">Endurance</span><span class="sess-text">9 km facile — récupération active après la grosse semaine 15</span></div>
+      <div class="session"><span class="sess-day">Jeudi</span><span class="sess-badge b-frac">Allure course</span><span class="sess-text">10 km avec 2×10 min à allure cible du 15 km — tester le rythme de compétition</span></div>
+      <div class="session"><span class="sess-day">Vendredi</span><span class="sess-badge b-nuit">Sortie nuit</span><span class="sess-text">6 km avec frontale à partir de 20h00 — simulation complète de l'heure de départ, mental race-day</span></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- PHASE 4 -->
+<div id="tab-p4" class="panel">
+<div class="container">
+  <div class="section-title">Phase 4 — Affûtage</div>
+  <p class="section-sub">Semaines 17–18 · 4 → 21 août · Volume réduit de 50%<br>La course est un vendredi soir — gère bien la journée avant : repos, hydratation, repas léger à midi.</p>
+  <div class="phase-header-box ph-p4">
+    <div class="ph-eyebrow">La règle d'or de l'affûtage</div>
+    <div class="ph-desc">Réduire le volume de 40–50%, maintenir quelques stimuli de qualité. Ne jamais faire une séance longue ou intense dans les 10 jours avant la course. Attention : la course est un vendredi soir, donc les derniers jours avant doivent être très calmes — éviter tout effort le jeudi 20 août.</div>
+  </div>
+
+  <div class="week-card">
+    <div class="week-head"><span class="week-title">Semaine 17 · 4 août</span><span class="week-km">~15 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Mardi</span><span class="sess-badge b-run">Endurance</span><span class="sess-text">7 km facile, quelques accélérations de 20 s pour garder les sensations neuromusculaires</span></div>
+      <div class="session"><span class="sess-day">Jeudi</span><span class="sess-badge b-cote">Courte qualité</span><span class="sess-text">6 km avec 5×45 s côtes vives, récup complète — activer les fibres rapides sans fatiguer</span></div>
+      <div class="session"><span class="sess-day">Dimanche</span><span class="sess-badge b-run">Endurance</span><span class="sess-text">7–8 km endurance, terrain trail si possible — visualisation mentale de la course de nuit</span></div>
+    </div>
+  </div>
+
+  <div class="week-card" style="border:2px solid var(--trail);">
+    <div class="week-head" style="background:var(--mountain);"><span class="week-title" style="color:var(--snow);">Race week · 11 août</span><span class="week-km" style="color:var(--trail);">~8 km</span></div>
+    <div class="week-sessions">
+      <div class="session"><span class="sess-day">Lundi</span><span class="sess-badge b-run">Endurance</span><span class="sess-text">4–5 km très facile — juste pour bouger, aucune fatigue</span></div>
+      <div class="session"><span class="sess-day">Mercredi</span><span class="sess-badge b-cote">Activation</span><span class="sess-text">4 km avec 4×30 s accélérations légères — mettre les jambes en éveil</span></div>
+      <div class="session"><span class="sess-day">Jeudi 20</span><span class="sess-badge b-recup">Repos complet</span><span class="sess-text">Veille de course : repos total, marche légère max 20 min, hydratation +++, repas léger à midi, dormir tôt</span></div>
+      <div class="session"><span class="sess-day">Vendredi 21</span><span class="sess-badge b-race">COURSE 19h15</span><span class="sess-text">Bélier Trail 15 km · La Clusaz · Départ 19h15 Place de l'Église · Frontale obligatoire</span></div>
+    </div>
+  </div>
+
+  <div style="background:var(--mountain);border-radius:12px;padding:1.5rem;color:var(--snow);margin-top:1.5rem;">
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:1.4rem;letter-spacing:0.03em;color:var(--trail);margin-bottom:1rem;">Checklist vendredi race day</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <div style="font-size:13px;color:#d0b8c4;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.08);">✓ Frontale chargée (obligatoire)</div>
+      <div style="font-size:13px;color:#d0b8c4;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.08);">✓ Gobelet souple dans le sac</div>
+      <div style="font-size:13px;color:#d0b8c4;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.08);">✓ Téléphone chargé (obligatoire)</div>
+      <div style="font-size:13px;color:#d0b8c4;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.08);">✓ Chaussures trail rodées</div>
+      <div style="font-size:13px;color:#d0b8c4;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.08);">✓ Dossard retiré (17–21 août)</div>
+      <div style="font-size:13px;color:#d0b8c4;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.08);">✓ PPS FFA valide (pps.athle.fr)</div>
+      <div style="font-size:13px;color:#f0a0b8;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.08);">✗ Bâtons — INTERDITS sur ce trail</div>
+      <div style="font-size:13px;color:#d0b8c4;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.08);">✓ Repas léger avant (3h avant départ)</div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- MUSCU -->
+<div id="tab-muscu" class="panel">
+<div class="container">
+  <div class="section-title">Renforcement musculaire</div>
+  <p class="section-sub">Programme spécifique trail avec haltères et poids du corps · 3 séances/semaine en phases 1–2, 2 séances en phase 3, arrêt 2 semaines avant la course</p>
+
+  <div class="muscu-intro">
+    <h3>Pourquoi c'est critique même sur 15 km</h3>
+    <p>Le 650 m de D- concentré sur 15 km sollicite intensément les quadriceps, surtout en fin de course quand la fatigue s'installe et la nuit tombe. Sans renforcement excentrique, les descentes deviennent dangereuses dans l'obscurité. Les chevilles stables sont essentielles sur terrain irrégulier de nuit. Sans bâtons (interdits), le gainage compense l'absence d'appui supplémentaire.</p>
+  </div>
+
+  <div class="muscu-phase-label">Phase 1–2 · Circuit fondamental · 3×, 40–50 min</div>
+
+  <div class="muscu-grid">
+    <div class="muscu-card">
+      <div class="muscu-card-title">Quadriceps & descente</div>
+      <div class="exo">
+        <div class="exo-name">Squat excentrique lent</div>
+        <div class="exo-detail">3×15 reps — descente en 4 secondes, remontée normale. Haltères aux épaules. Clé pour les descentes de nuit où la vigilance est réduite.</div>
+      </div>
+      <div class="exo">
+        <div class="exo-name">Step-down (marche excentrique)</div>
+        <div class="exo-detail">3×12 par jambe — descendre d'une marche sur une seule jambe, contrôle total. Simule la descente technique trail.</div>
+      </div>
+      <div class="exo">
+        <div class="exo-name">Fente bulgare</div>
+        <div class="exo-detail">3×10 par jambe — jambe arrière surélevée, haltères en mains. Puissance + équilibre unipodal.</div>
+      </div>
+    </div>
+
+    <div class="muscu-card">
+      <div class="muscu-card-title">Chaîne postérieure & montée</div>
+      <div class="exo">
+        <div class="exo-name">Romanian deadlift</div>
+        <div class="exo-detail">3×12 — haltères, dos droit, charnière hanche. Ischiojambiers et fessiers = moteurs de la montée.</div>
+      </div>
+      <div class="exo">
+        <div class="exo-name">Hip thrust</div>
+        <div class="exo-detail">3×15 — épaules sur banc/canapé, haltère sur le bassin. Activation maximale des fessiers.</div>
+      </div>
+      <div class="exo">
+        <div class="exo-name">Single-leg deadlift</div>
+        <div class="exo-detail">3×10 par jambe — haltère main opposée. Équilibre + proprioception + force fonctionnelle.</div>
+      </div>
+    </div>
+
+    <div class="muscu-card">
+      <div class="muscu-card-title">Gainage & tronc</div>
+      <div class="exo">
+        <div class="exo-name">Planche frontale</div>
+        <div class="exo-detail">3×45 s → progresser vers 60 s. Essentiel car les bâtons sont interdits — le tronc compense l'absence d'appui.</div>
+      </div>
+      <div class="exo">
+        <div class="exo-name">Planche latérale</div>
+        <div class="exo-detail">3×30 s par côté. Stabilité latérale pour les virages techniques sur sentiers de nuit.</div>
+      </div>
+      <div class="exo">
+        <div class="exo-name">Dead bug</div>
+        <div class="exo-detail">3×10 par côté — contrôle lombaire sous mouvement. Protège le dos sur la durée.</div>
+      </div>
+    </div>
+
+    <div class="muscu-card">
+      <div class="muscu-card-title">Cheville & proprioception</div>
+      <div class="exo">
+        <div class="exo-name">Équilibre unipodal progressif</div>
+        <div class="exo-detail">3×45 s par pied — progresser yeux ouverts → yeux fermés. Critique de nuit où les repères visuels sont limités.</div>
+      </div>
+      <div class="exo">
+        <div class="exo-name">Calf raises sur marche</div>
+        <div class="exo-detail">3×20 — descente lente 3 s, montée explosive. Renforce tendons d'Achille et mollets.</div>
+      </div>
+      <div class="exo">
+        <div class="exo-name">Résistance latérale cheville</div>
+        <div class="exo-detail">3×15 reps avec élastique — eversion et inversion. Prévenir les entorses sur terrain nocturne irrégulier.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="muscu-phase-label">Phase 3 · Maintenance · 2×, 35 min</div>
+  <div style="background:var(--card);border-radius:12px;border:1px solid #f0dde5;padding:1.25rem 1.5rem;margin-bottom:1rem;">
+    <div style="font-size:13px;line-height:1.65;color:#4a5568;">À partir de la semaine 12, passer à 2 séances/semaine. Maintenir les exercices excentriques et le gainage. Réduire légèrement les charges. Objectif : ne pas perdre les gains sans accumuler de fatigue supplémentaire.</div>
+  </div>
+
+  <div class="muscu-phase-label">Phase 4 · Arrêt complet · Semaines 17–18</div>
+  <div style="background:var(--card);border-radius:12px;border:1px solid #f0dde5;padding:1.25rem 1.5rem;">
+    <div style="font-size:13px;line-height:1.65;color:#4a5568;">Stopper toute séance de renforcement 2 semaines avant la course. Quelques exercices de mobilité et d'équilibre légers sont tolérés. Les gains sont acquis — priorité à la récupération.</div>
+  </div>
+</div>
+</div>
+
+<!-- CONSEILS -->
+<div id="tab-conseils" class="panel">
+<div class="container">
+  <div class="section-title">Conseils clés</div>
+  <p class="section-sub">Les éléments décisifs pour préparer et réussir ce trail de nuit unique.</p>
+
+  <div class="urgent-box">
+    <div>
+      <div class="tip-title">Inscriptions — ouverture le 16 avril à 12h00</div>
+      <div class="tip-text">Les 1000 dossards du Trail 15 km partent rapidement. Inscris-toi dès l'ouverture. Obligatoire également : le Pass Prévention Santé FFA (5 €) sur pps.athle.fr — valable 1 an, indispensable pour participer.</div>
+    </div>
+  </div>
+
+  <div class="night-box">
+    <div>
+      <div class="tip-title">La frontale — ton équipement le plus important</div>
+      <div class="tip-text">La frontale est obligatoire. Prends-en une avec au minimum 200 lumens, autonomie > 4h. Teste-la impérativement lors de tes sorties nocturnes d'entraînement (S11, S13, S16). Les piles/batterie doivent être vérifiées la veille. Emporte une paire de piles de rechange dans ton sac.</div>
+    </div>
+  </div>
+
+  <div class="tip-list">
+    <div class="tip-card">
+      <div class="tip-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e8a0b8" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </div>
+      <div class="tip-content">
+        <div class="tip-title">S'entraîner de nuit — obligatoire</div>
+        <div class="tip-text">Courir de nuit change complètement les sensations : la profondeur de champ est réduite, les repères disparaissent, la fatigue visuelle s'ajoute à la fatigue physique. Le plan prévoit 3 sorties nocturnes (S11, S13, S16) à partir de 20h avec ta vraie frontale de course. Ces séances sont non-négociables.</div>
+      </div>
+    </div>
+
+    <div class="tip-card">
+      <div class="tip-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e8a0b8" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg>
+      </div>
+      <div class="tip-content">
+        <div class="tip-title">Bâtons interdits — renforcer le tronc en conséquence</div>
+        <div class="tip-text">Contrairement au 27 km, les bâtons sont formellement interdits sur le 15 km. Cela change la gestion des montées raides : le gainage et les bras devront compenser. Les séances de planche et de dead bug du programme muscu sont directement liées à cette contrainte.</div>
+      </div>
+    </div>
+
+    <div class="tip-card">
+      <div class="tip-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e8a0b8" stroke-width="2"><path d="M8 6l6-3 6 3v12l-6 3-6-3V6z"/></svg>
+      </div>
+      <div class="tip-content">
+        <div class="tip-title">Sortie montagne en juillet — essentielle</div>
+        <div class="tip-text">Programme au moins 1 weekend en montagne (Vosges, Jura, Chartreuse) en juillet pour une sortie avec vrai dénivelé. 400–600 m D+ sur 14–17 km sont indispensables pour calibrer tes sensations avant la course. Idéalement en semaine 13 ou 15.</div>
+      </div>
+    </div>
+
+    <div class="tip-card">
+      <div class="tip-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e8a0b8" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></svg>
+      </div>
+      <div class="tip-content">
+        <div class="tip-title">Gestion de la journée du vendredi</div>
+        <div class="tip-text">La course démarre à 19h15 — soit après une journée de travail. Mange léger à midi (pas de repas lourd), hydrate-toi toute la journée, évite le café en excès l'après-midi. Mange un encas glucidique léger 2h avant le départ (banane, pain + confiture). Prévois de retirer ton dossard dans la journée.</div>
+      </div>
+    </div>
+
+    <div class="tip-card">
+      <div class="tip-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e8a0b8" stroke-width="2"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2m0 5v5l3.5 3.5"/></svg>
+      </div>
+      <div class="tip-content">
+        <div class="tip-title">Règle des 10% — ne jamais forcer la progression</div>
+        <div class="tip-text">Ne jamais augmenter le volume de plus de 10% par semaine. Le plan intègre des semaines de récupération aux S4, S9 et S14. Si tu ressens une douleur inhabituelle, recule d'une semaine — mieux vaut perdre 7 jours que 3 semaines blessé.</div>
+      </div>
+    </div>
+
+    <div class="tip-card">
+      <div class="tip-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e8a0b8" stroke-width="2"><path d="M12 22V12M12 12L8 8m4 4l4-4M3 16l4-4 4 4 4-4 4 4"/></svg>
+      </div>
+      <div class="tip-content">
+        <div class="tip-title">Descentes de nuit — technique spécifique</div>
+        <div class="tip-text">De nuit, la perception des obstacles est réduite : raccourcis la foulée encore plus qu'en plein jour, ralentis dans les virages non éclairés, maintiens le faisceau de ta frontale à 3–5 m devant toi (pas trop loin). Ne jamais regarder ses pieds — regarder là où tu vas aller. Les excentriques du programme muscu sont ta meilleure protection.</div>
+      </div>
+    </div>
+
+    <div class="tip-card">
+      <div class="tip-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e8a0b8" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+      </div>
+      <div class="tip-content">
+        <div class="tip-title">Ce trail est une expérience unique</div>
+        <div class="tip-text">Le coucher de soleil sur la vallée des Aravis depuis les hauteurs de La Clusaz est l'un des moments les plus magiques de l'événement. Gère bien ton effort dans les premières montées pour avoir l'énergie d'en profiter pleinement au sommet. Ce n'est pas juste une course — c'est un souvenir pour longtemps.</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- FOOTER -->
+<div class="footer">
+  Plan préparé pour le <span>Bélier Trail 15 km · La Clusaz · Vendredi 21 août 2026 · 19h15</span><br>
+  <span style="color:rgba(255,255,255,0.3);font-size:10px;margin-top:6px;display:block;">Course organisée par le Club des Sports de La Clusaz · lebelier-laclusaz.fr</span>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+  function activateTab(id, btn) {
+    document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
+    document.querySelectorAll('.nav-tab').forEach(function(t) { t.classList.remove('active'); });
+    var panel = document.getElementById('tab-' + id);
+    if (panel) { panel.classList.add('active'); }
+    btn.classList.add('active');
+    window.scrollTo(0, 0);
+  }
+
+  document.querySelectorAll('.nav-tab').forEach(function(btn) {
+    var id = btn.getAttribute('data-tab');
+    btn.addEventListener('touchend', function(e) {
+      e.preventDefault();
+      activateTab(id, btn);
+    }, { passive: false });
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      activateTab(id, btn);
+    });
+  });
+
+  // Build chart bars
+  var data = [
+    {km:16,phase:'p1'},{km:17,phase:'p1'},{km:18,phase:'p1'},{km:13,phase:'recup'},{km:20,phase:'p1'},
+    {km:21,phase:'p2'},{km:22,phase:'p2'},{km:23,phase:'p2'},{km:15,phase:'recup'},{km:24,phase:'p2'},{km:26,phase:'p2'},
+    {km:25,phase:'p3'},{km:26,phase:'p3'},{km:16,phase:'recup'},{km:28,phase:'p3'},{km:25,phase:'p3'},
+    {km:15,phase:'p4'},{km:8,phase:'p4'}
+  ];
+  var colors = { p1:'#e89ab0', p2:'#c090d0', p3:'#e8a870', p4:'#90b8e0', recup:'#c8b0c0' };
+  var maxKm = 30;
+  var container = document.getElementById('chart-bars');
+  data.forEach(function(d, i) {
+    var col = document.createElement('div');
+    col.className = 'bar-col';
+    var bar = document.createElement('div');
+    bar.className = 'bar';
+    bar.style.height = Math.round((d.km / maxKm) * 100) + '%';
+    bar.style.background = colors[d.phase];
+    bar.title = 'S' + (i+1) + ' : ' + d.km + ' km';
+    var label = document.createElement('div');
+    label.className = 'bar-label';
+    label.textContent = d.km;
+    col.appendChild(bar);
+    col.appendChild(label);
+    container.appendChild(col);
+  });
+
+}); // end DOMContentLoaded
+</script>
+</body>
+</html>
