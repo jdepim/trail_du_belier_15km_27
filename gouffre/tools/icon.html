@@ -1,0 +1,30 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>icon</title></head><body style="margin:0;background:#000">
+<canvas id="c"></canvas>
+<script type="module">
+import { loadSprites, getSprite, backdrop } from '../src/sprites.js';
+loadSprites();
+// Render the app icon at N px (pixel art drawn at 36 px then integer-upscaled).
+window.renderIcon = (N) => {
+  const B = 36;
+  const small = document.createElement('canvas'); small.width = B; small.height = B;
+  const g = small.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, B);
+  grd.addColorStop(0, '#0b0a22'); grd.addColorStop(0.7, '#2a1a3e'); grd.addColorStop(1, '#4a2238');
+  g.fillStyle = grd; g.fillRect(0, 0, B, B);
+  g.drawImage(backdrop.moon, 8, 8, 48, 48, -5, -12, 48, 48);
+  g.fillStyle = '#e8e0c8'; g.fillRect(31, 5, 1, 1); g.fillRect(4, 3, 1, 1); g.fillRect(33, 14, 1, 1);
+  g.fillStyle = '#0a0916'; g.fillRect(0, 30, B, 6);
+  g.fillStyle = '#3f6a3a'; g.fillRect(0, 30, B, 1);
+  const s = getSprite('player_strike_up');
+  g.drawImage(s.canvas, s.w, 0, s.w, s.h, 2, 0, s.w, s.h);
+  const c = document.getElementById('c');
+  c.width = N; c.height = N;
+  const k = N / B;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(small, 0, 0, B, B, 0, 0, B * k, B * k);
+  return c.toDataURL('image/png');
+};
+document.title = 'ready';
+</script></body></html>

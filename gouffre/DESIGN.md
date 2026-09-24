@@ -53,7 +53,9 @@
 | 2. Catacombes | 40–99 | pierre, briques (salles en ruine), os | fer (4), argent (7) | squelette, chauve-souris, gelée |
 | 3. Grottes cristallines | 100–179 | granit, roche cristalline | or (12), améthyste (18) | araignée, spectre, chauve-souris |
 | 4. Abysse ardente | 180–259 | basalte, obsidienne, **lave** (dégâts) | rubis (30), mithril (50) | diablotin de feu, golem, spectre |
-| 5. Le Cœur | 260–287 | arène pré-construite | — | **Le Gardien** (boss) |
+| 5. Le Cœur | 260–273¹ | arène pré-construite | — | **Le Gardien** (boss) |
+
+¹ La roche-mère commence à la ligne `H-12 = 288` (d = 274) : le Cœur couvre donc d 260–273 (lignes 274–287).
 
 - Grottes : bruit + automate cellulaire, plus ouvertes en profondeur ; tunnels « vers » ; salles de
   catacombes (couche 2) ; géodes de cristal (couche 3) ; lacs de lave (couche 4).
@@ -229,3 +231,25 @@ cassé, ramassage, dégâts, mort, grappin tiré/accroché, banque, achat).
   ramassage, banque, mort/régénération, achat à la Forge. Captures dans `tests/e2e/screenshots/`
   (ignorées par git).
 - `gouffre/package.json` : scripts `test`, `test:e2e`, `serve` (aucune dépendance obligatoire).
+
+## 14. Notes d'implémentation (étape 1 — moteur)
+
+Précisions et ajouts compatibles avec le contrat ci-dessus (détails : `NOTES-core.md`).
+- `World.back: Uint8Array` : style de mur de fond par tuile (`tiles.BACK`), 0 = ciel. `World.chunkVersion`
+  (une version par chunk 16×16), `World.damaged` (liste des tuiles entamées), `World.skyTop` (ciel ouvert par colonne).
+- Tuiles supplémentaires : `grass`, `beam` (poutre du chevalement, ancrage du grappin au camp), `arena`
+  (briques du Cœur, hp 40 t3), `crystal` (amas lumineux des géodes), `life_crystal` (cristal de vie, `drop: 'heal'`),
+  décors non solides `torch`, `bones_deco`, `cobweb`, `stalactite`, `stalagmite`, `roots`, `mushroom`, `post`.
+- Pioche de base : **tier 0** (les briques t1 demandent la 1ʳᵉ amélioration de pioche). Argent : hôte brique (hp 6, t1).
+- `generateWorld(seed)` renvoie aussi `arena` (intérieur, entrée, position du boss) et `seed`. Points d'apparition :
+  `{ key, tx, ty, x, y, anchor: 'floor'|'ceiling'|'air', w, h, layer, depth }` (règles dans `config.ENEMY_SPAWN_RULES`).
+- `input.moveY` (−1 haut … 1 bas), `input.aimActive`, `input.setContextAction(label|null)`, `input.tap(a)`,
+  `input.clearInjected()`. Entrée « Entrée » non mappée (réservée aux boutons DOM).
+- Hooks de jeu supplémentaires : `game.tileBroken(tx, ty, id, cause)`, `game.onPlayerDeath(cause)`, `game.toast(text, opts)`.
+- `EnemyManager.damageInBox(box, dmg, fromX, opts) → nb touchés` est appelé par la frappe du joueur.
+- Lumières dynamiques : `lighting.addLight(...)` se fait pendant le pas fixe (liste vidée au début de chaque
+  pas par `lighting.clearDynamic()`, conservée entre les images, pendant le hit-stop et la pause).
+  `game.hitStop(s)` gèle un nombre entier de pas fixes (≥ 1). `game.tileBroken` retire aussi les décors
+  privés de support (`World.clearDetachedDeco`). Invariant de génération : la lave ne touche jamais le vide
+  sur les côtés ni dessous.
+

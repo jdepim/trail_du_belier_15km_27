@@ -1,0 +1,15 @@
+{
+  "name": "gouffre",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Gouffre — rogue-lite de minage gothique en pixel art (HTML5 canvas, ES modules, aucune dépendance).",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/unit/*.test.mjs",
+    "test:e2e": "node tests/e2e/smoke.mjs",
+    "serve": "node tests/e2e/server.mjs 8080"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
