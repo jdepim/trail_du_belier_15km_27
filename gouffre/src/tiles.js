@@ -52,6 +52,8 @@ const DEFS = [
   ['roots',        'Racines',               false, 0,   0,  0,  0,    { colors: ['#1a100a', '#3b2616', '#5a3c22', '#7a5532'], deco: true }],
   ['mushroom',     'Champignon luisant',    false, 0,   0,  0,  0.35, { colors: ['#0a2a2a', '#1a6a6a', '#3fd0c0', '#b8fff4'], deco: true, lightColor: [60, 230, 200] }],
   ['post',         'Poteau',                false, 0,   0,  0,  0,    { colors: ['#24150c', '#4f3019', '#6e4424', '#8f5c32'], deco: true }],
+  // boss arena portcullis: seals the Heart's entrance while the Guardian fights
+  ['gate',         'Herse du Cœur',         true,  Infinity, 99, 0, 0, { colors: ['#0c0a10', '#2c2a36', '#555868', '#9aa0b4'], sound: 'metal' }],
 ];
 
 /** TILES[id] -> definition */

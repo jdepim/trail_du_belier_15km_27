@@ -181,6 +181,101 @@ export const TOUCH = {
 // ---------------------------------------------------------------- enemies (§6)
 export const ENEMY_SCALING = { hpPerM: 1 / 60, dmgPerM: 1 / 80, ngPlusMul: 1.5 };
 
+// Base stats before depth scaling (hp × (1 + d/60), dmg × (1 + d/80), × 1.5 in NG+).
+// w/h = hitbox px; gold = base coin value (× (1 + d × DROPS.goldPerM));
+// kbResist 0..1 = fraction of the strike knockback ignored; projDmg = base projectile damage.
+// Layer 1 is tuned for a new player (60 HP, 10 strike damage): bats die in one hit,
+// slimes in two or three, and each hit taken costs about a tenth of the HP bar.
+export const ENEMY_STATS = {
+  slime: { hp: 16, dmg: 5, speed: 68, w: 12, h: 10, gold: 2, kbResist: 0 },
+  bat: { hp: 8, dmg: 4, speed: 58, w: 12, h: 9, gold: 2, kbResist: 0 },
+  skeleton: { hp: 22, dmg: 7, speed: 26, w: 10, h: 24, gold: 4, kbResist: 0.25, projDmg: 6 },
+  spider: { hp: 18, dmg: 8, speed: 92, w: 14, h: 9, gold: 5, kbResist: 0.1 },
+  ghost: { hp: 20, dmg: 7, speed: 34, w: 14, h: 18, gold: 6, kbResist: 0 },
+  imp: { hp: 20, dmg: 6, speed: 64, w: 12, h: 14, gold: 7, kbResist: 0.1, projDmg: 7 },
+  golem: { hp: 60, dmg: 10, speed: 20, w: 22, h: 28, gold: 12, kbResist: 0.85 },
+  guardian: { hp: 150, dmg: 5, speed: 34, w: 34, h: 46, gold: 150, kbResist: 1, projDmg: 6 },
+};
+
+// Behaviour tuning (ranges in px, times in s, speeds in px/s).
+export const ENEMY_AI = {
+  gravity: 900,
+  maxFall: 380,
+  knockbackX: 170,          // strike knockback (× (1 - kbResist))
+  knockbackY: 120,
+  hitStun: 0.28,            // no steering / no contact damage after being struck
+  killHitStop: 0.07,
+  contactShrink: 2,         // px trimmed from each side of an enemy box for contact damage
+  slime: { aggroX: 120, aggroY: 64, hopVx: 72, hopVy: 235, hopEvery: [0.75, 1.3], squash: 0.24 },
+  bat: { wake: 76, flee: 0.55, bob: 22, bobFreq: 5.5, giveUp: 240 },
+  skeleton: { sight: 150, sightY: 72, windup: 0.55, cooldown: [1.9, 2.6], boneTime: 0.95, boneGrav: 420, boneMaxV: 260 },
+  spider: { hang: 6, triggerX: 18, triggerY: 150, shake: 0.28, pause: [0.35, 0.8], run: [0.9, 1.6] },
+  ghost: { aggro: 170, drift: 0.9, alpha: 0.62 },
+  imp: { aggro: 190, keepDist: 72, hover: 34, windup: 0.65, cooldown: [2.1, 2.9], fireSpeed: 118 },
+  golem: { sightX: 150, sightY: 14, windup: 0.75, chargeSpeed: 150, chargeTime: 1.5, stun: 1.1, chargeDmgMul: 1.5 },
+  projLife: 4,
+};
+
+// Off-screen respawn around the player (by the layer of the spawn tile).
+export const ENEMY_SPAWNING = {
+  interval: [9, 8, 7, 6],   // s between attempts, per layer of the player
+  localCap: [4, 5, 6, 6],   // max non-boss enemies in the active zone, per layer
+  globalCap: 72,            // live enemies in the whole mine
+  minDistTiles: 9,          // never closer than this to the player
+  maxDistTiles: 22,
+  tries: 28,
+  despawnScreens: 3.5,      // respawned enemies farther than this (view widths) are recycled
+};
+
+// Enemies update only near the camera: |dx| < rangeX × viewW, |dy| < rangeY × viewH
+// from the camera centre (≈ 1.5 screens around it). Farther ones sleep.
+export const ENEMY_ACTIVE = { rangeX: 1.25, rangeY: 1.5 };
+
+// Drops (pickups are pooled, bounce and are magnetised to the player).
+export const DROPS = {
+  goldPerM: 1 / 60,         // coin value multiplier per metre of depth
+  coinsMax: 6,              // coins per regular enemy (value split between them)
+  heartChance: 0.08,
+  heartChanceLow: 0.25,     // when the player is below 35 % HP
+  heartHeal: 15,
+  crystalHeal: 20,          // life crystal heart
+  magnetRadius: 46,
+  magnetDelay: 0.32,        // s before a fresh drop can be pulled
+  magnetAccel: 1100,
+  magnetMaxSpeed: 280,
+  gravity: 720,
+  bounce: 0.45,
+  life: 40,                 // s before an uncollected pickup vanishes (blinks the last 3 s)
+  maxPickups: 96,
+};
+
+// Le Gardien de l'Abysse (boss, DESIGN §6). Damage values are base values (depth-scaled).
+export const BOSS = {
+  phase2: 0.66, phase3: 0.33,   // hp fractions
+  intro: 2.2,                   // s of roar before the fight (invulnerable)
+  phaseTime: 1.6,               // s of transition roar (invulnerable)
+  walkSpeed: [30, 40, 52],      // per phase
+  attackGap: [1.5, 1.15, 0.85], // s of walking between attacks
+  slamWindup: [0.9, 0.8, 0.7],
+  slamRecover: 0.8,
+  shockSpeed: 150,
+  shockDmgMul: 1.2,
+  swipeRange: 64,
+  swipeWindup: 0.5,
+  swipeDmgMul: 1.5,
+  summonWindup: 1.0,
+  maxMinions: 4,
+  rainWindup: 0.9,
+  rainWarn: 0.85,
+  rainSpacing: 60,              // px between meteors (gaps to stand in)
+  chargeWindup: 0.75,
+  chargeSpeed: 230,
+  chargeStun: 1.4,
+  chargeDmgMul: 1.6,
+  deathTime: 3.0,
+  coins: 24,                    // coins dropped on death
+};
+
 // Spawn placement rules (tile footprint + anchoring) used by worldgen.
 export const ENEMY_SPAWN_RULES = {
   slime: { anchor: 'floor', w: 1, h: 1 },
