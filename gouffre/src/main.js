@@ -12,7 +12,8 @@ import { Hud } from './hud.js';
 import { Player } from './player.js';
 import { EnemyManager } from './enemies.js';
 import { EntityManager } from './entities.js';
-import { loadSaveEx, saveGame, applyUpgrades, bankLoot, settleDeath, clearSave, buyUpgrade, storageAvailable } from './meta.js';
+import { loadSaveEx, saveGame, applyUpgrades, bankLoot, settleDeath, forfeitLoot, clearSave, buyUpgrade, storageAvailable, exportSave, importSave } from './meta.js';
+import { Coach } from './tips.js';
 import { createUI } from './ui.js';
 import { loadSprites, makeIcon } from './sprites.js';
 import { parseFlags, installDebug } from './debug.js';
@@ -52,6 +53,8 @@ game.toast = (text, opts) => game.hud.toast(text, opts);
 game.tileBroken = (tx, ty, id, cause) => {
   const def = TILES[id];
   const x = tx * TILE + TILE / 2, y = ty * TILE + TILE / 2;
+  if (id === TILE_ID.TRAPDOOR) openTrapdoor(tx, ty);
+  if (cause === 'player' && game.player.strikeDir === 'down') game.coach.onDigDown();
   game.particles.spawn('debris', x, y, { tileId: id, count: def.ore ? 12 : 9 });
   game.particles.spawn('dust', x, y + 4, { count: 3 });
   if (def.ore || def.light > 0) game.particles.spawn('glint', x, y, { color: def.colors[3] });
@@ -60,6 +63,47 @@ game.tileBroken = (tx, ty, id, cause) => {
   // roots / stalactites / stalagmites... that hung from or stood on it crumble
   game.world.clearDetachedDeco(tx, ty, onDecoDetached);
 };
+
+/** One strike on the camp trapdoor opens all of it (the other planks swing away). */
+function openTrapdoor(tx, ty) {
+  const w = game.world;
+  for (const dir of [-1, 1]) {
+    for (let x = tx + dir; w.get(x, ty) === TILE_ID.TRAPDOOR; x += dir) {
+      w.set(x, ty, TILE_ID.AIR);
+      game.particles.spawn('debris', x * TILE + TILE / 2, ty * TILE + TILE / 2, { tileId: TILE_ID.TRAPDOOR, count: 6 });
+    }
+  }
+  game.trapdoorT = 0;
+}
+
+/**
+ * The trapdoor closes again once the hero is back on the camp ground, a tile or more
+ * away from the shaft, for TRAPDOOR_CLOSE seconds: the camp stays walkable from the
+ * Forge to the far side, and every trip down starts by opening it (one strike).
+ */
+const TRAPDOOR_CLOSE = 1.0;
+function campTrapdoor(inCamp, dt) {
+  const g = game, p = g.player, td = g.gen.camp.trapdoor, w = g.world;
+  if (!td) return;
+  let open = false;
+  for (let x = td.x0; x <= td.x1; x++) if (w.get(x, td.y) === TILE_ID.AIR) { open = true; break; }
+  const x0 = td.x0 * TILE, x1 = (td.x1 + 1) * TILE;
+  const away = p.x + p.w < x0 - TILE || p.x > x1 + TILE;
+  if (!open || !inCamp || !p.onGround || !away) { g.trapdoorT = 0; return; }
+  g.trapdoorT = (g.trapdoorT || 0) + dt;
+  if (g.trapdoorT < TRAPDOOR_CLOSE) return;
+  // never close on something: a pickup or an enemy in the plank row waits
+  const y0 = td.y * TILE, y1 = y0 + TILE;
+  for (const q of g.entities.pickups) if (q.active && q.x < x1 && q.x + q.w > x0 && q.y < y1 && q.y + q.h > y0) return;
+  for (const e of g.enemies.list) if (e.alive && e.x < x1 && e.x + e.w > x0 && e.y < y1 && e.y + e.h > y0) return;
+  for (let x = td.x0; x <= td.x1; x++) {
+    if (w.get(x, td.y) !== TILE_ID.AIR) continue;
+    w.set(x, td.y, TILE_ID.TRAPDOOR);
+    g.particles.spawn('dust', x * TILE + TILE / 2, y0 + 2, { count: 3 });
+  }
+  g.audio.play('hit', { material: 'wood', pitch: 0.7 });
+  g.trapdoorT = 0;
+}
 
 function onDecoDetached(tx, ty, id) {
   const x = tx * TILE + TILE / 2, y = ty * TILE + TILE / 2;
@@ -120,6 +164,7 @@ game.bank = (newTrip = true) => {
   const run = game.run, p = game.player;
   const s = bankLoot(game.save, run, p.stats, { newTrip });
   game.persist();
+  if (s.total > 0) game.coach.onBank();
   game.hud.tally(s); // counts up with coin ticks, then the "cha-ching" (audio 'bank'); merges into a tally on screen
   game.audio.play('coin', { pitch: 1.2 });
   game.particles.spawn('glint', p.cx, p.y - 4, { color: '#ffe08a' });
@@ -156,6 +201,33 @@ game.requestPause = () => {
   if (game.state !== 'PLAYING') return;
   if (game.player.dead || game.deathT > 0) { game.deathT = -1; game.setState('DEAD'); return; }
   game.setState('PAUSED');
+};
+
+/**
+ * Pause menu "Corde de secours" (offered only once the stuck detector fired, tips.js):
+ * the hero is hauled back to the camp alive. The unbanked loot stays at the bottom
+ * (minus the Bourse de secours share), relics and the mine are kept, no death counted.
+ */
+game.rescue = () => {
+  const run = game.run, p = game.player;
+  if (!run || run.over || p.dead || !game.coach.canRescue) return null;
+  const s = forfeitLoot(game.save, run, p.stats);
+  game.persist();
+  const camp = game.gen.camp;
+  p.teleport(camp.spawnX, camp.spawnY);
+  p.facing = 1;
+  p.iframes = Math.max(p.iframes, 1);
+  run.awayFromCamp = false;
+  game.coach.resetStuck();
+  game.camera.snap();
+  game.setState('PLAYING');
+  game.audio.play('grapple_attach');
+  game.particles.spawn('dust', p.cx, p.feetY, { count: 8 });
+  game.toast('Corde de secours', {
+    color: '#ffe6a0', life: 3.2,
+    sub: s.lostValue > 0 ? `Hissé au camp · butin perdu : ${s.lostValue} or${s.kept ? ` (${s.kept} sauvés)` : ''}` : 'Hissé au camp',
+  });
+  return s;
 };
 
 /** Pause menu "Recommencer l'expédition": abandon = a death (loot lost, insurance applies). */
@@ -222,10 +294,20 @@ game.eraseSave = () => {
   game.newWorld(randomSeed());
 };
 
+/** Running in a Safari tab (not the home-screen app) on a touch device? */
+function inSafariTab() {
+  if (!game.input.touchEnabled) return false;
+  const standalone = window.navigator.standalone === true ||
+    (window.matchMedia && window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches);
+  return !standalone;
+}
+
 function showTitle() {
   game.ui.showTitle({
     runActive: game.runActive && game.run && !game.run.over,
     runDepth: game.run ? game.player.depth : 0,
+    touch: game.input.touchEnabled,
+    installHint: inSafariTab(),
     onPlay: () => game.startGame(),
     onSettings: showSettings,
   });
@@ -236,10 +318,37 @@ function showSettings() {
     storage: game.saveStatus === 'unavailable' ? false : storageAvailable(),
     onToggleMute: () => game.toggleMute(),
     onToggleShake: () => { game.save.settings.shake = !game.save.settings.shake; game.persist(); return game.save.settings.shake; },
+    onToggleTips: () => game.toggleTips(),
+    onExport: () => exportSave(game.save),
+    onImport: (text) => game.importSave(text),
     onErase: () => game.eraseSave(),
     onBack: showTitle,
   });
 }
+
+/** Réglages "Astuces": off hides the tips; turning them back on shows every tip again. */
+game.toggleTips = () => {
+  const st = game.save.settings;
+  st.tips = st.tips === false;
+  if (st.tips) game.save.tips = {};
+  game.persist();
+  return st.tips;
+};
+
+/**
+ * Réglages "Transférer" → paste a code from the other copy of the game (Safari tab /
+ * home-screen app keep separate storage). Replaces the progress, keeps this device's
+ * settings, starts a fresh mine. Returns false for an invalid code.
+ */
+game.importSave = (text) => {
+  const next = importSave(text);
+  if (!next) return false;
+  next.settings = { ...game.save.settings };
+  game.save = next;
+  game.persist();
+  game.newWorld(randomSeed());
+  return true;
+};
 
 game.setState = (s) => {
   const prev = game.state;
@@ -255,8 +364,10 @@ game.setState = (s) => {
         run: game.run, player: game.player,
         // no abandon once settled, nor while the beaten Guardian dies (the victory is due)
         canAbandon: !!game.run && !game.run.over && !game.run.bossDefeated && !game.enemies.truce,
+        canRescue: game.coach.canRescue && !!game.run && !game.run.over && !game.player.dead,
         onResume: () => game.setState('PLAYING'),
         onAbandon: () => game.abandonRun(),
+        onRescue: () => game.rescue(),
         onTitle: () => game.toTitle(),
         onToggleMute: () => game.toggleMute(),
       });
@@ -303,6 +414,8 @@ game.newWorld = (seed) => {
   game.entities.reset(gen);
   game.particles.clear();
   game.hud.reset();
+  game.coach.reset();
+  game.trapdoorT = 0;
   applyUpgrades(game.player, game.save, game.run.relics);
   game.player.reset(gen.camp.spawnX, gen.camp.spawnY);
   game.player.facing = 1;
@@ -440,6 +553,8 @@ function updatePlaying(dt) {
   if (!inCamp) run.awayFromCamp = true;
   else if (run.bagCount > 0 || run.gold > 0) { g.bank(run.awayFromCamp === true); run.awayFromCamp = false; }
   campRest(inCamp, dt);
+  campTrapdoor(inCamp, dt);
+  g.coach.update(dt); // onboarding tips + stuck detector
 
   if (g.victoryT > 0) {
     g.victoryT -= dt;
@@ -566,6 +681,9 @@ function boot() {
   game.enemies = new EnemyManager(game);
   game.entities = new EntityManager(game);
   game.renderer = new Renderer(game, canvas);
+  game.coach = new Coach(game);
+  game.onGrappleAttach = () => game.coach.onAttach();
+  game.onOrePickup = () => game.coach.onOre();
   const loaded = loadSaveEx();
   game.save = loaded.save;
   game.saveStatus = loaded.status;

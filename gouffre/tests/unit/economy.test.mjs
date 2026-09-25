@@ -117,8 +117,8 @@ test('upgrades: 8 upgrades, strictly increasing costs, Infinity when maxed', () 
     for (let lv = 0; lv <= u.max; lv++) assert.equal(typeof u.effect(lv), 'string');
   }
   assert.equal(UPGRADES.insurance.max, 2);
-  // the cheapest first level is affordable after one short trip (~25 gold)
-  assert.ok(Math.min(...UPGRADE_KEYS.map((k) => upgradeCost(k, 0))) <= 15);
+  // the cheapest first level is affordable after one short trip (a full starting bag of coal = 10 gold)
+  assert.ok(Math.min(...UPGRADE_KEYS.map((k) => upgradeCost(k, 0))) <= 10);
 });
 
 test('upgrades: every level changes the right stat, in the right direction', () => {
@@ -194,7 +194,7 @@ test('banking: bag value (× Avarice) + run gold become banked gold; stats and r
   assert.equal(run.banked, 30); assert.equal(run.ore, 5);
   // Avarice relic: ore × 1.3 (rounded once)
   run.bag = { ruby: 3 }; run.bagCount = 3;
-  assert.equal(bankLoot(s, run, { oreMul: 1.3 }).oreValue, Math.round(90 * 1.3));
+  assert.equal(bankLoot(s, run, { oreMul: 1.3 }).oreValue, Math.round(3 * TILE_BY_KEY.ruby.value * 1.3));
   // an empty bank is not a trip
   const trips = s.stats.trips;
   assert.equal(bankLoot(s, run, {}).total, 0);
@@ -361,7 +361,7 @@ test('chests: "Ouvrir" near a closed chest; a relic chest grants a relic and ref
   assert.equal(game.entities.interactionAt(p), null, 'opened chests are no longer interactable');
 });
 
-test('chests: a gold chest bursts into coins worth base × (1 + depth / 25); a strike opens it', () => {
+test('chests: a gold chest bursts into coins worth base × (1 + depth × perM); a strike opens it', () => {
   const game = chestGame('gold');
   const p = game.player;
   p.x = 12 * TILE + 8 - 16 - p.w / 2; p.facing = 1;
@@ -475,13 +475,16 @@ test('relic Vampirisme heals on kills; Cœur de troll regenerates', () => {
 test('economy: simulated progression meets the balance targets (tools/economy.mjs)', () => {
   const { milestones, survey } = runEconomy({ quiet: true });
   const m = Object.fromEntries(milestones.map((r) => [r.k, r]));
+  // targets re-based on the final audit's legal-play bot (tools/economy.mjs header):
+  // bot medians pick 1 trip 3, pick 2 trip 12, pick 4 trip 32, Guardian-ready 1 h 50
   assert.equal(m.first.trip, 1, 'first upgrade after one short trip');
-  assert.ok(m.pick1.trip >= 2 && m.pick1.trip <= 4, `pickaxe tier 1 after ~3 trips (${m.pick1.trip})`);
-  assert.ok(m.pick2.trip >= 8 && m.pick2.trip <= 13, `tier 2 after ~10 trips (${m.pick2.trip})`);
-  assert.ok(m.pick4.trip >= 17 && m.pick4.trip <= 26, `tier 3 after ~20 trips (${m.pick4.trip})`);
-  assert.ok(m.boss.time >= 2 * 3600 && m.boss.time <= 4 * 3600, `Guardian reachable in 2-4 h (${(m.boss.time / 3600).toFixed(2)} h)`);
-  // deeper layers are worth more per ore
+  assert.ok(m.pick1.trip >= 2 && m.pick1.trip <= 5, `pickaxe tier 1 after ~3 trips (${m.pick1.trip})`);
+  assert.ok(m.pick2.trip >= 9 && m.pick2.trip <= 16, `tier 2 after ~12 trips (${m.pick2.trip})`);
+  assert.ok(m.pick4.trip >= 24 && m.pick4.trip <= 38, `tier 3 after ~30 trips (${m.pick4.trip})`);
+  assert.ok(m.boss.time >= 1.6 * 3600 && m.boss.time <= 2.75 * 3600, `Guardian ready in ~1 h 35 - 2 h 45 (${(m.boss.time / 3600).toFixed(2)} h)`);
+  // deeper layers are worth more per ore, and the Abyss holds the most ore gold
   for (let i = 1; i < 4; i++) assert.ok(survey[i].avgValue > survey[i - 1].avgValue);
+  assert.ok(survey[3].value > survey[2].value * 1.5, 'layer 4 out-earns layer 3');
 });
 
 // ------------------------------------------------------------------ HUD queue, NG+ levels

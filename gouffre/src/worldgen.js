@@ -511,6 +511,20 @@ function placeOres(rng, ctx) {
     for (let v = 0; v < spec.veins; v++) vein();
     for (let guard = 0; placed < G.minOreTiles && guard < 200; guard++) vein();
   }
+  // risk pays: rubies in the natural rock that crusts the lava lakes (layer 4)
+  const crust = G.lavaCrustOre;
+  if (crust) {
+    const spec = G.ores[crust.key], id = T[crust.key.toUpperCase()];
+    const y0 = rowOf(spec.d0), y1 = rowOf(spec.d1);
+    for (let y = y0; y <= y1; y++) {
+      for (let x = BEDROCK_COLS; x < W - BEDROCK_COLS; x++) {
+        const i = y * W + x;
+        if (!NATURAL[world.types[i]] || protect[i]) continue;
+        const lava = world.types[i - 1] === T.LAVA || world.types[i + 1] === T.LAVA || world.types[i - W] === T.LAVA || world.types[i + W] === T.LAVA;
+        if (lava && rng.chance(crust.chance)) world.types[i] = id;
+      }
+    }
+  }
 }
 
 function placeLifeCrystals(rng, ctx) {
@@ -558,6 +572,14 @@ function buildCamp(ctx) {
     set(world, G.beamX1, ty, T.POST);
   }
   for (let tx = G.beamX0; tx <= G.beamX1; tx++) set(world, tx, G.beamY, T.BEAM);
+  // trapdoor planks over the shaft mouth: the camp is walkable end to end and the
+  // first dig (↓ + Frapper on the planks) opens the mine; main.js closes it again
+  // once the hero is back on the camp ground
+  for (let tx = G.shaftX0; tx <= G.shaftX1; tx++) set(world, tx, SURFACE_Y, T.TRAPDOOR);
+  // the camp ground row and the headframe beam cannot be mined: the Forge, the spawn and
+  // the camp's grapple anchor always stay usable (the mine starts below this row)
+  for (let tx = G.campFlatX0; tx <= G.campFlatX1; tx++) if (tx < G.shaftX0 || tx > G.shaftX1) world.lock(tx, SURFACE_Y);
+  for (let tx = G.beamX0; tx <= G.beamX1; tx++) world.lock(tx, G.beamY);
 
   const forgeX = ((G.forgeX0 + G.forgeX1 + 1) / 2) * TILE;
   return {
@@ -565,7 +587,8 @@ function buildCamp(ctx) {
     bankY: SURFACE_Y * TILE,                    // y < bankY (feet) = safe zone
     spawnX: G.spawnTx * TILE + TILE / 2,       // centre-bottom of the player
     spawnY: SURFACE_Y * TILE,
-    shaft: { x0: G.shaftX0, x1: G.shaftX1, y0: SURFACE_Y, y1: SURFACE_Y + G.shaftDepth - 1 },
+    shaft: { x0: G.shaftX0, x1: G.shaftX1, y0: SURFACE_Y + 1, y1: SURFACE_Y + G.shaftDepth - 1 }, // open part, under the trapdoor
+    trapdoor: { x0: G.shaftX0, x1: G.shaftX1, y: SURFACE_Y },
     beam: { x0: G.beamX0, x1: G.beamX1, y: G.beamY },
     forge: {
       x0: G.forgeX0 * TILE, x1: (G.forgeX1 + 1) * TILE, x: forgeX, y: SURFACE_Y * TILE,

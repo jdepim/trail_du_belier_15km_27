@@ -82,6 +82,55 @@ try {
     await shot('02-camp.png');
   });
 
+  await step('render: the canvas holds the small internal image, CSS upscales it (no full-resolution copy)', async () => {
+    const r = await G(() => {
+      const c = document.getElementById('game'), i = window.__gouffre.info();
+      return { w: c.width, h: c.height, cssW: parseFloat(c.style.width), cssH: parseFloat(c.style.height), W: i.W, H: i.H, scale: i.scale, dpr: devicePixelRatio, ir: getComputedStyle(c).imageRendering };
+    });
+    assert.deepEqual([r.w, r.h], [r.W, r.H], 'backing store = internal resolution');
+    assert.ok(Math.abs(r.cssW - (r.W * r.scale) / r.dpr) < 0.01 && Math.abs(r.cssH - (r.H * r.scale) / r.dpr) < 0.01, 'CSS size = internal × scale');
+    assert.match(r.ir, /pixelated|crisp-edges/);
+  });
+
+  await step('onboarding: controls tip on a fresh save; the trapdoor tip, ↓ + Frapper opens it, it closes behind the hero', async () => {
+    const tip = () => G(() => { const h = window.__gouffre.game.hud; return { cur: h.tipData && h.tipData.key, queue: h.tipQueue.map((q) => q.key) }; });
+    assert.equal((await tip()).cur, 'move', 'controls tip first');
+    assert.equal((await G(() => window.__gouffre.save())).tips.move, 1, 'remembered in the save');
+    await settle(3400); // the camp banner, then the tip panel
+    await shot('02b-tip-controls.png');
+    const gen = await G(() => window.__gouffre.gen());
+    const td = gen.camp.trapdoor;
+    assert.deepEqual(await G((td) => [td.x0, td.x0 + 1, td.x1].map((x) => window.__gouffre.tile(x, td.y).key), td), ['trapdoor', 'trapdoor', 'trapdoor']);
+    // standing on the planks: the dig tip comes next
+    await G((td) => window.__gouffre.teleport(td.x0 + 1, td.y - 1), td);
+    await waitFor(async () => { const t = await tip(); return t.cur === 'dig' || t.queue.includes('dig'); }, 2000);
+    await waitFor(async () => (await tip()).cur === 'dig', 9000);
+    await settle(300);
+    await shot('02c-tip-dig.png');
+    // real touches: stick down + Frapper
+    const lay = await G(() => window.__gouffre.input.layout());
+    await touch('touchStart', [{ x: lay.stickGhost.x, y: lay.stickGhost.y, id: 1 }]);
+    await touch('touchMove', [{ x: lay.stickGhost.x, y: lay.stickGhost.y + 40, id: 1 }]);
+    await touch('touchStart', [{ x: lay.stickGhost.x, y: lay.stickGhost.y + 40, id: 1 }, { x: lay.attack.x, y: lay.attack.y, id: 3 }]);
+    await settle(150);
+    await touch('touchEnd', [{ x: lay.stickGhost.x, y: lay.stickGhost.y + 40, id: 1 }]);
+    await touch('touchEnd', []);
+    assert.deepEqual(await G((td) => [td.x0, td.x0 + 1, td.x1].map((x) => window.__gouffre.tile(x, td.y).key), td), ['air', 'air', 'air'], 'one strike opens the whole trapdoor');
+    await waitFor(async () => (await player()).depth >= 5, 2000);
+    await waitFor(async () => (await tip()).cur !== 'dig', 1500); // the dig tip goes away once the hero dug
+    // back on the camp ground, away from the shaft: the planks close again
+    await G(() => window.__gouffre.teleport(30, 13));
+    await waitFor(() => G((td) => window.__gouffre.tile(td.x0 + 1, td.y).key === 'trapdoor', td), 3000);
+    // the camp ground itself cannot be dug
+    await inject({ x: 0, y: 1, attack: true });
+    await settle(700);
+    await clearInput();
+    assert.equal((await player()).depth, 0, 'the camp ground holds');
+    assert.equal(await G(() => window.__gouffre.tile(30, 14).key), 'grass');
+    await G((x) => window.__gouffre.teleport(x, 13), Math.floor(gen.camp.spawnX / TILE));
+    await settle(200);
+  });
+
   await step('player walks (injected input)', async () => {
     const p0 = await player();
     assert.equal(p0.onGround, true);
@@ -151,9 +200,13 @@ try {
     await waitFor(async () => (await grapple()).state === 'attached', 1500, 16);
     await settle(700);
     assert.ok((await player()).depth < p.depth, 'reeled up the hole');
+    // hanging on a short rope, each new Grappin press hauls the hero higher (hop + re-hook)
+    const d1 = (await player()).depth;
+    for (let i = 0; i < 8; i++) { await G(() => window.__gouffre.input.tap('grapple')); await page.waitForTimeout(330); }
+    const d2 = (await player()).depth;
+    assert.ok(d2 <= d1 - 2, `mashing Grappin climbs (${d1} -> ${d2} m)`);
     await clearInput();
-    await G(() => window.__gouffre.input.tap('grapple')); // re-press = let go
-    await waitFor(async () => (await grapple()).state !== 'attached', 1000);
+    await shot('04b-climb.png');
   });
 
   await step('touch: floating stick moves the player (CDP touch events)', async () => {
@@ -194,6 +247,9 @@ try {
   });
 
   await step('touch: attack button digs, grapple button fires', async () => {
+    const gsh = await G(() => window.__gouffre.gen());
+    await G((sh) => window.__gouffre.teleport(sh.x0, sh.y1), gsh.camp.shaft);
+    await waitFor(async () => (await player()).onGround, 2000);
     const lay = await G(() => window.__gouffre.input.layout());
     const p = await player();
     const below = { tx: p.tileX, ty: p.tileY + 1 };
@@ -300,6 +356,36 @@ try {
     const r = await G(() => window.__gouffre.run());
     assert.deepEqual([r.bagCount, r.gold, r.relics.length], [0, 0, 0], 'empty backpack, no run gold, no relics');
     assert.equal((await G(() => window.__gouffre.stats())).magnetMul, 1, 'relic effects gone');
+  });
+
+  await step('death summary: the worst case (8 ores, 11 relics) fits or scrolls, even with notch insets; the title is never clipped', async () => {
+    await G(() => {
+      const g = window.__gouffre;
+      for (const k of ['coal', 'copper', 'iron', 'silver', 'gold', 'amethyst', 'ruby', 'mithril']) g.giveOre(k, 2);
+      g.game.run.gold = 50;
+      for (const k of ['double_jump', 'magnet', 'vampire', 'fire_pick', 'stone_skin', 'feather', 'quick_hook', 'spectral_lantern', 'frenzy', 'greed', 'troll_heart']) g.giveRelic(k);
+      g.die('golem');
+    });
+    await waitFor(() => G(() => window.__gouffre.state === 'DEAD'), 4000);
+    await settle(150);
+    // real landscape Safari on a notched iPhone: insets left / right 47, bottom 21 (Chromium reports 0)
+    const m = await G(() => {
+      const ov = document.querySelector('[data-ui=death]');
+      ov.style.padding = '0 47px 21px 47px';
+      ov.scrollTop = 0;
+      const top = ov.querySelector('h2').getBoundingClientRect().top;
+      ov.scrollTop = ov.scrollHeight;
+      const btn = ov.querySelector('[data-act=restart]').getBoundingClientRect();
+      const out = { top, scrollable: getComputedStyle(ov).overflowY, btnBottom: btn.bottom, vh: innerHeight };
+      ov.scrollTop = 0;
+      return out;
+    });
+    assert.ok(m.top >= 0, `title visible (top ${m.top.toFixed(0)})`);
+    assert.equal(m.scrollable, 'auto', 'the overlay scrolls when needed');
+    assert.ok(m.btnBottom <= m.vh - 21 + 1, `the buttons can be reached above the home indicator (${m.btnBottom.toFixed(0)} / ${m.vh})`);
+    await shot('12b-death-worst-case.png');
+    await page.tap('[data-act=restart]');
+    await waitFor(() => G(() => window.__gouffre.state === 'PLAYING'));
   });
 
   // ------------------------------------------------------------ regressions (review fixes)
@@ -777,8 +863,8 @@ try {
     await touch('touchEnd', []);
     await waitFor(() => G(() => window.__gouffre.state === 'SHOP'));
     const cap0 = (await G(() => window.__gouffre.stats())).bagCapacity;
-    const cost = await G(() => window.__gouffre.game.save.upgrades.bag === 0 ? 15 : null);
-    assert.equal(cost, 15);
+    const cost = await G(() => window.__gouffre.game.save.upgrades.bag === 0 ? 10 : null); // meta.UPGRADES.bag.costs[0]
+    assert.equal(cost, 10);
     await page.tap('[data-buy=bag]');
     await waitFor(async () => (await G(() => window.__gouffre.save())).upgrades.bag === 1, 1500);
     const sv = await G(() => window.__gouffre.save());
@@ -789,7 +875,7 @@ try {
     await G(() => window.__gouffre.setBank(10));
     assert.equal(await G(() => document.querySelector('[data-buy=pick]').disabled), true);
     assert.equal(await G(() => document.querySelectorAll('[data-up=bag] .pip.on').length), 1);
-    await G(() => window.__gouffre.setBank(500 - 15));
+    await G((c) => window.__gouffre.setBank(500 - c), cost);
     await settle(250);
     await shot('29-forge.png');
     await page.keyboard.press('Escape');
@@ -843,6 +929,62 @@ try {
     // next trip: one coal -> the estimate is 1 (it used to carry the previous trips' value)
     await G(() => { const g = window.__gouffre; g.teleportDepth(20); g.giveOre('coal', 1); });
     assert.equal((await G(() => window.__gouffre.run())).bagValue, 1);
+  });
+
+  await step('stuck: after 45 s without climbing the pause menu offers "Corde de secours" (camp, loot lost, relics kept, no death)', async () => {
+    await G(() => { const g = window.__gouffre; g.setGod(true); g.clearEnemies(); });
+    const s = await G(() => window.__gouffre.teleportDepth(60, 20));
+    // wall the hero into a small granite cell (hardness 2: the starting pickaxe cannot dig out)
+    await G(({ tx, ty }) => {
+      const g = window.__gouffre;
+      for (let y = ty - 4; y <= ty + 1; y++) for (let x = tx - 2; x <= tx + 2; x++) {
+        const inside = x >= tx - 1 && x <= tx + 1 && y >= ty - 2 && y <= ty;
+        g.setTile(x, y, inside ? 'air' : 'granite');
+      }
+      g.teleport(tx, ty);
+      g.giveOre('iron', 3);
+      g.game.run.gold = 12;
+      g.giveRelic('magnet');
+    }, s);
+    const before = await G(() => ({ save: window.__gouffre.save(), run: window.__gouffre.run() }));
+    assert.equal(await G(() => window.__gouffre.game.coach.canRescue), false);
+    await G(() => window.__gouffre.freeze(true));
+    await G(() => {
+      const g = window.__gouffre;
+      for (let i = 0; i < 60 * 47; i++) {
+        if (i % 60 === 0) g.input.tap(i % 120 === 0 ? 'jump' : 'grapple');
+        g.game.fixedStep(1 / 60);
+      }
+      g.input.clear();
+    });
+    await G(() => window.__gouffre.freeze(false));
+    assert.equal(await G(() => window.__gouffre.game.coach.canRescue), true, 'stuck detected');
+    const shown = await G(() => { const h = window.__gouffre.game.hud; return [h.tipData && h.tipData.key, ...h.tipQueue.map((q) => q.key)]; });
+    assert.ok(shown.includes('rescue'), `rescue tip (${shown})`);
+    const lay = await G(() => window.__gouffre.input.layout());
+    await touch('touchStart', [{ x: lay.pause.x, y: lay.pause.y, id: 60 }]);
+    await touch('touchEnd', []);
+    await waitFor(() => G(() => window.__gouffre.state === 'PAUSED'));
+    await page.waitForSelector('[data-act=rescue]');
+    await shot('34-pause-rescue.png');
+    await page.tap('[data-act=rescue]');
+    await page.waitForSelector('[data-act=rescue-confirm]');
+    const order = await G(() => [...document.querySelectorAll('.row.confirm button')].map((b) => b.dataset.act));
+    assert.deepEqual(order, ['cancel', 'rescue-confirm'], '"Annuler" first');
+    await settle(650); // the confirm button arms after 0.55 s
+    await page.tap('[data-act=rescue-confirm]');
+    await waitFor(() => G(() => window.__gouffre.state === 'PLAYING'));
+    const p = await player();
+    assert.ok(p.feetY <= SURFACE_Y * TILE + 0.5 && !p.dead, 'hauled back to the camp');
+    const after = await G(() => ({ save: window.__gouffre.save(), run: window.__gouffre.run(), seed: window.__gouffre.gen().seed }));
+    assert.deepEqual([after.run.bagCount, after.run.gold], [0, 0], 'unbanked loot left at the bottom');
+    assert.deepEqual(after.run.relics, before.run.relics, 'relics kept');
+    assert.equal(after.run.over, false, 'same expedition');
+    assert.equal(after.seed, before.run.seed, 'same mine');
+    assert.equal(after.save.stats.deaths, before.save.stats.deaths, 'not a death');
+    assert.equal(after.save.stats.rescues, (before.save.stats.rescues || 0) + 1);
+    assert.equal(await G(() => window.__gouffre.game.coach.canRescue), false);
+    await G(() => window.__gouffre.setGod(false));
   });
 
   await step('pause during the death animation goes straight to the death summary', async () => {
@@ -964,6 +1106,54 @@ try {
     assert.ok(fits, 'the Forge still fits without scrolling');
     await shot('38-forge-unlock.png');
     await G((p0) => { const game = window.__gouffre.game; game.save.upgrades.pick = p0; game.setState('PLAYING'); game.refreshStats(); }, pick0);
+  });
+
+  await step('menus: "Commandes" (pause and Réglages), "Astuces" toggle, "Transférer" code round trip', async () => {
+    await G(() => window.__gouffre.pause());
+    await page.tap('[data-act=controls]');
+    await waitFor(() => G(() => window.__gouffre.ui() === 'controls'));
+    const txt = await G(() => document.querySelector('[data-ui=controls]').innerText);
+    assert.match(txt, /Joystick/i); assert.match(txt, /Grappin/i); assert.match(txt, /Clavier/i); assert.match(txt, /Manette/i);
+    await shot('40-controls.png');
+    await page.tap('[data-act=back]');
+    await waitFor(() => G(() => window.__gouffre.ui() === 'pause'));
+    await page.tap('[data-act=title]');
+    await waitFor(() => G(() => window.__gouffre.state === 'TITLE'));
+    assert.match(await G(() => document.querySelector('.keys-touch').innerText), /Joystick/, 'touch controls line on the title');
+    await page.tap('[data-act=settings]');
+    await shot('41-settings.png');
+    await page.tap('[data-act=tips]');
+    assert.equal((await G(() => window.__gouffre.save())).settings.tips, false);
+    await page.tap('[data-act=tips]');
+    const sv = await G(() => window.__gouffre.save());
+    assert.equal(sv.settings.tips, true);
+    assert.deepEqual(sv.tips, {}, 'turning tips back on shows them again');
+    await page.tap('[data-act=transfer]');
+    const code = await G(() => document.querySelector('textarea.code').value);
+    assert.match(code, /^GOUFFRE1:/);
+    await shot('42-transfer.png');
+    const gold0 = (await G(() => window.__gouffre.save())).gold;
+    await G(() => window.__gouffre.setBank(3));
+    await page.fill('textarea.code:not([readonly])', code);
+    await page.tap('[data-act=import]');
+    assert.equal((await G(() => window.__gouffre.save())).gold, 3, 'asks before replacing');
+    await page.tap('[data-act=import]');
+    assert.equal((await G(() => window.__gouffre.save())).gold, gold0, 'code imported');
+    assert.match(await G(() => document.querySelector('[data-ui=transfer] .msg').textContent), /importée/);
+    await page.fill('textarea.code:not([readonly])', 'n’importe quoi');
+    await page.tap('[data-act=import]'); // not a Gouffre code: rejected at once, no confirmation asked
+    assert.match(await G(() => document.querySelector('[data-ui=transfer] .msg').textContent), /invalide/);
+    // arming with one code, then pasting another, asks again before replacing anything
+    await G(() => window.__gouffre.setBank(4));
+    await page.fill('textarea.code:not([readonly])', code);
+    await page.tap('[data-act=import]');
+    await page.fill('textarea.code:not([readonly])', code + ' ');
+    await page.tap('[data-act=import]');
+    assert.equal((await G(() => window.__gouffre.save())).gold, 4, 'a changed code needs its own confirmation');
+    assert.match(await G(() => document.querySelector('[data-ui=transfer] .msg').textContent), /confirmer/);
+    await page.tap('[data-act=back]');
+    await page.tap('[data-act=back]');
+    await waitFor(() => G(() => window.__gouffre.ui() === 'title'));
   });
 
   await step('reload keeps the save; settings erase it only after a confirmation', async () => {

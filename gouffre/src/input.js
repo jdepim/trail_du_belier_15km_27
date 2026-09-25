@@ -194,7 +194,14 @@ export class Input {
   }
 
   // ------------------------------------------------------------ keyboard
+  /** A key typed into a text field (menu save-transfer code) is not a game key. */
+  _typing(e) {
+    const t = e.target, tag = t && t.tagName;
+    return tag === 'TEXTAREA' || tag === 'INPUT';
+  }
+
   _onKeyDown(e) {
+    if (this._typing(e)) return;
     if (this.onKey) this.onKey(e);
     const m = KEYMAP[e.code];
     if (!m) return;
@@ -213,6 +220,7 @@ export class Input {
   _onKeyUp(e) {
     const m = KEYMAP[e.code];
     if (!m) return;
+    if (this._typing(e) && !this.kbDirs[m] && !this.raw[m]) return;
     e.preventDefault();
     if (DIRS.includes(m)) { this.kbDirs[m] = false; this._updateAxes(); }
     else this._setAction('kb', m, false);

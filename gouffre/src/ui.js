@@ -1,8 +1,9 @@
 // DOM overlays styled gothic (DESIGN.md §9): title, settings, pause, Forge, death, victory.
 //
-//   showTitle({ runActive, runDepth, onPlay, onSettings })
-//   showSettings({ storage, onToggleMute, onToggleShake, onErase, onBack })
-//   showPause({ run, player, canAbandon, onResume, onAbandon, onTitle, onToggleMute })
+//   showTitle({ runActive, runDepth, touch, installHint, onPlay, onSettings })
+//   showSettings({ storage, onToggleMute, onToggleShake, onToggleTips, onExport, onImport, onErase, onBack })
+//   showPause({ run, player, canAbandon, canRescue, onResume, onAbandon, onRescue, onTitle, onToggleMute })
+//   showControls(onBack)                               the "Commandes" panel (touch / keyboard / gamepad)
 //   showShop({ onBuy(key) -> buyUpgrade result, onClose })
 //   showDeath(summary, { onRestart, onTitle })        summary = meta.settleDeath()
 //   showVictory(info, { onContinue, onTitle })
@@ -31,6 +32,7 @@ function el(tag, cls, text) {
 }
 
 const fmtN = (n) => Math.round(n || 0).toLocaleString('fr-FR');
+const fmtDepth = (d) => (d > 0 ? `−${d} m` : '0 m');
 function fmtTime(s) {
   s = Math.max(0, Math.round(s || 0));
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
@@ -229,6 +231,9 @@ export class UI {
 
   _onKey(e) {
     if (!this.current) return;
+    // typing in a text field (save transfer code): keys belong to the field
+    const tag = e.target && e.target.tagName;
+    if ((tag === 'TEXTAREA' || tag === 'INPUT') && e.code !== 'Escape') return;
     const k = e.code;
     const stop = () => { e.preventDefault(); e.stopPropagation(); };
     if (NAV[k]) { stop(); this.move(NAV[k][0], NAV[k][1]); return; }
@@ -287,7 +292,7 @@ export class UI {
 
   // ---------------------------------------------------------------- title & settings
 
-  showTitle({ runActive = false, runDepth = 0, onPlay, onSettings }) {
+  showTitle({ runActive = false, runDepth = 0, touch = false, installHint = false, onPlay, onSettings }) {
     const save = this.game.save;
     const st = save.stats;
     const progress = st.runs > 0 || save.gold > 0 || st.trips > 0;
@@ -307,22 +312,85 @@ export class UI {
       if (save.ngPlus) bits.push(`NG+ ${save.ngPlus}`);
       box.appendChild(el('div', 'small', bits.join(' · ')));
     }
-    box.appendChild(el('div', 'small keys', 'Clavier : ← → ↑ ↓ · Espace saut · X frapper · C grappin · E forge · Échap pause'));
+    if (touch) box.appendChild(el('div', 'small keys-touch', 'Joystick à gauche : marcher, viser · à droite : Saut, Frapper, Grappin'));
+    else box.appendChild(el('div', 'small keys', 'Clavier : ← → ↑ ↓ · Espace saut · X frapper · C grappin · E forge · Échap pause'));
+    if (installHint) {
+      box.appendChild(el('div', 'small install', 'Safari : Partager → « Sur l’écran d’accueil » pour jouer en plein écran et garder ta progression'));
+    }
     ov.appendChild(box);
     this._show('title', ov);
   }
 
-  showSettings({ storage = true, onToggleMute, onToggleShake, onErase, onBack }) {
+  // ---------------------------------------------------------------- controls help
+
+  /** "Commandes": what every control does, for touch, keyboard and gamepad. */
+  showControls(onBack) {
     const ov = el('div', 'ov ov-dim');
-    const box = el('div', 'panel');
+    const box = el('div', 'panel wide controls');
+    const head = el('div', 'ctl-head');
+    head.appendChild(el('h2', '', 'Commandes'));
+    head.appendChild(this._button('Retour', onBack, 'primary close', 'back'));
+    box.appendChild(head);
+    const touchFirst = 'ontouchstart' in window || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0);
+    const groups = [
+      ['Tactile', [
+        ['Joystick (moitié gauche)', 'marcher, viser'],
+        ['Frapper', 'creuse et frappe dans la direction visée (bas : sous tes pieds)'],
+        ['Saut', 'sauter · lâcher la corde avec un élan'],
+        ['Grappin', 'lance le crochet (neutre : vers le haut) · accroché : haut / bas = enrouler / dérouler, re-appui = se hisser'],
+        ['Forge · Ouvrir', 'bouton près du forgeron ou d’un coffre'],
+      ]],
+      ['Clavier', [
+        ['← → ↑ ↓ / WASD', 'marcher, viser'], ['Espace / Z', 'sauter'], ['X / J', 'frapper, creuser'],
+        ['C / K', 'grappin'], ['E', 'Forge, coffre'], ['Échap / P', 'pause'], ['M', 'son'],
+      ]],
+      ['Manette', [
+        ['Stick / croix', 'marcher, viser'], ['A', 'sauter'], ['X / RT', 'frapper'], ['B / RB / LT', 'grappin'],
+        ['Y', 'Forge, coffre'], ['Start', 'pause'],
+      ]],
+    ];
+    if (!touchFirst) groups.push(groups.shift()); // desktop: keyboard first
+    const grid = el('div', 'ctl-grid');
+    for (const [title, rows] of groups) {
+      const col = el('div', 'ctl-col');
+      col.appendChild(el('h3', '', title));
+      for (const [k, v] of rows) {
+        const r = el('div', 'ctl-row');
+        r.appendChild(el('span', 'ck', k));
+        r.appendChild(document.createTextNode(' '));
+        r.appendChild(el('span', 'cv', v));
+        col.appendChild(r);
+      }
+      grid.appendChild(col);
+    }
+    box.appendChild(grid);
+    box.appendChild(el('p', 'small', 'Remonte au camp pour mettre ton butin à l’abri, puis dépense l’or à la Forge.'));
+    ov.appendChild(box);
+    this._show('controls', ov, { onBack });
+  }
+
+  showSettings(opts) {
+    const { storage = true, onToggleMute, onToggleShake, onToggleTips, onExport, onImport, onErase, onBack } = opts;
+    const reopen = () => this.showSettings(opts);
+    const ov = el('div', 'ov ov-dim');
+    const box = el('div', 'panel settings');
     box.appendChild(el('h2', '', 'Réglages'));
     const soundLabel = () => (this.game.audio.muted ? 'Son : coupé' : 'Son : activé');
     const shakeLabel = () => (this.game.save.settings.shake !== false ? 'Secousses : oui' : 'Secousses : non');
+    const tipsLabel = () => (this.game.save.settings.tips !== false ? 'Astuces : oui' : 'Astuces : non');
     const mute = this._button(soundLabel(), () => { onToggleMute(); mute.firstChild.textContent = soundLabel(); }, '', 'mute');
     const shake = this._button(shakeLabel(), () => { onToggleShake(); shake.firstChild.textContent = shakeLabel(); }, '', 'shake');
-    box.append(mute, shake);
+    const grid = el('div', 'set-grid');
+    grid.append(mute, shake);
+    if (onToggleTips) {
+      const tips = this._button(tipsLabel(), () => { onToggleTips(); tips.firstChild.textContent = tipsLabel(); }, '', 'tips');
+      grid.appendChild(tips);
+    }
+    grid.appendChild(this._button('Commandes', () => this.showControls(reopen), '', 'controls'));
+    if (onExport && onImport) grid.appendChild(this._button('Transférer', () => this.showTransfer({ onExport, onImport, onBack: reopen }), '', 'transfer'));
     const erase = this._button('Effacer la sauvegarde', () => confirmErase(), 'danger', 'erase');
-    box.appendChild(erase);
+    grid.appendChild(erase);
+    box.appendChild(grid);
     if (!storage) box.appendChild(el('p', 'notice', 'Stockage indisponible (navigation privée ?) : la progression ne sera pas conservée.'));
     const msg = el('p', 'msg');
     box.appendChild(msg);
@@ -335,24 +403,80 @@ export class UI {
       box.appendChild(el('p', '', 'Or banqué, améliorations de la Forge et statistiques seront perdus à jamais.'));
       const row = el('div', 'row confirm');
       // "Annuler" first: the safe choice comes before (and the red one is armed late)
-      row.appendChild(this._button('Annuler', () => this.showSettings({ storage, onToggleMute, onToggleShake, onErase, onBack }), 'primary', 'cancel'));
+      row.appendChild(this._button('Annuler', reopen, 'primary', 'cancel'));
       row.appendChild(this._arm(this._button('Effacer définitivement', () => {
         onErase();
-        this.showSettings({ storage, onToggleMute, onToggleShake, onErase, onBack });
+        reopen();
         const m = this.current && this.current.querySelector('.msg');
         if (m) m.textContent = 'Sauvegarde effacée.';
       }, 'danger', 'erase-confirm')));
       box.appendChild(row);
       this._keepClear(row.lastChild);
-      this.current._onBack = () => this.showSettings({ storage, onToggleMute, onToggleShake, onErase, onBack });
+      this.current._onBack = reopen;
       if (!('ontouchstart' in window)) row.firstChild.focus();
     };
     this._show('settings', ov, { onBack });
   }
 
+  /**
+   * "Transférer la progression": Safari tabs and the home-screen app keep separate
+   * storage on iOS, so the save can travel as a text code (copy here, paste there).
+   */
+  showTransfer({ onExport, onImport, onBack }) {
+    const ov = el('div', 'ov ov-dim');
+    const box = el('div', 'panel wide transfer');
+    box.appendChild(el('h2', '', 'Transférer'));
+    box.appendChild(el('p', 'small', 'Safari et l’app de l’écran d’accueil ne partagent pas leur sauvegarde. Copie ce code ici, puis colle-le de l’autre côté.'));
+    const out = el('textarea', 'code');
+    out.readOnly = true;
+    out.rows = 2;
+    out.value = onExport();
+    out.setAttribute('aria-label', 'Code de ta sauvegarde');
+    box.appendChild(out);
+    const msg = el('p', 'msg');
+    const copy = this._button('Copier le code', () => {
+      out.focus(); out.select(); out.setSelectionRange(0, out.value.length); // iOS needs the explicit range
+      let ok = false;
+      try { ok = document.execCommand && document.execCommand('copy'); } catch { ok = false; }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(out.value).then(() => { msg.textContent = 'Code copié.'; }, () => { if (!ok) msg.textContent = 'Sélectionne le code et copie-le.'; });
+      }
+      msg.textContent = ok ? 'Code copié.' : msg.textContent;
+    }, '', 'copy');
+    box.appendChild(copy);
+    const inp = el('textarea', 'code');
+    inp.rows = 2;
+    inp.placeholder = 'Colle ici un code GOUFFRE1:…';
+    inp.setAttribute('aria-label', 'Code à importer');
+    box.appendChild(inp);
+    let confirmStep = false;
+    inp.addEventListener('input', () => { confirmStep = false; }); // a new code asks again
+    const row = el('div', 'row');
+    row.appendChild(this._button('Importer', () => {
+      const code = inp.value.trim();
+      if (!code) { msg.textContent = 'Colle d’abord un code.'; return; }
+      // not even a Gouffre code: say so at once instead of asking to confirm first
+      if (!code.replace(/\s+/g, '').startsWith('GOUFFRE1:')) { msg.textContent = 'Code invalide.'; confirmStep = false; return; }
+      if (!confirmStep) {
+        confirmStep = true;
+        msg.textContent = 'Importer remplace ta progression actuelle. Appuie encore sur « Importer » pour confirmer.';
+        return;
+      }
+      msg.textContent = onImport(code) ? 'Progression importée.' : 'Code invalide.';
+      confirmStep = false;
+      if (msg.textContent === 'Progression importée.') out.value = onExport();
+    }, 'danger', 'import'));
+    row.appendChild(this._button('Retour', onBack, 'primary', 'back'));
+    box.appendChild(row);
+    box.appendChild(msg);
+    ov.appendChild(box);
+    this._show('transfer', ov, { onBack, focus: false });
+  }
+
   // ---------------------------------------------------------------- pause
 
-  showPause({ run, player, canAbandon = true, onResume, onAbandon, onTitle, onToggleMute }) {
+  showPause(args) {
+    const { run, player, canAbandon = true, canRescue = false, onResume, onAbandon, onRescue, onTitle, onToggleMute } = args;
     const ov = el('div', 'ov ov-dim');
     const box = el('div', 'panel');
     const build = () => {
@@ -367,14 +491,21 @@ export class UI {
         box.appendChild(el('p', 'small', bits.join(' · ')));
       }
       box.appendChild(this._button('Reprendre', onResume, 'primary', 'resume'));
+      // stuck (tips.js detector): the way out that keeps the mine and the relics
+      if (canRescue && onRescue && !settled) box.appendChild(this._button('Corde de secours', confirmRescue, 'rescue', 'rescue', 'Retour au camp · butin non banqué perdu'));
       const mute = this._button(this.game.audio.muted ? 'Son : coupé' : 'Son : activé', () => {
         const m = onToggleMute();
         mute.firstChild.textContent = m ? 'Son : coupé' : 'Son : activé';
       }, '', 'mute');
-      box.appendChild(mute);
+      const two = el('div', 'row two');
+      two.appendChild(mute);
+      two.appendChild(this._button('Commandes', () => this.showControls(() => this.showPause(args)), '', 'controls'));
+      box.appendChild(two);
       // no abandon once the run is settled, nor in the Guardian's last breath (the victory is due)
-      if (canAbandon && !settled && !(run && run.bossDefeated)) box.appendChild(this._button('Recommencer l’expédition', confirm, '', 'abandon'));
-      box.appendChild(this._button('Retour au titre', onTitle, 'minor', 'title'));
+      const last = el('div', 'row two');
+      if (canAbandon && !settled && !(run && run.bossDefeated)) last.appendChild(this._button('Recommencer l’expédition', confirm, 'minor', 'abandon'));
+      last.appendChild(this._button('Retour au titre', onTitle, 'minor', 'title'));
+      box.appendChild(last);
       ov._refresh = () => { mute.firstChild.textContent = this.game.audio.muted ? 'Son : coupé' : 'Son : activé'; };
       if (this.current === ov) this.current._onBack = onResume;
     };
@@ -389,6 +520,22 @@ export class UI {
       const row = el('div', 'row confirm');
       row.appendChild(this._button('Annuler', () => { build(); focusFirst(); }, 'primary', 'cancel'));
       row.appendChild(this._arm(this._button('Abandonner', onAbandon, 'danger', 'abandon-confirm')));
+      box.appendChild(row);
+      this._keepClear(row.lastChild);
+      this.current._onBack = () => { build(); focusFirst(); };
+      if (!('ontouchstart' in window)) row.firstChild.focus();
+    };
+    const confirmRescue = () => {
+      box.replaceChildren();
+      box.appendChild(el('h2', '', 'Corde de secours'));
+      const ins = player ? player.stats.insurance : 0;
+      const loot = run && (run.bagCount || run.gold);
+      let txt = 'Le forgeron te hisse jusqu’au camp. La mine et tes reliques sont conservées, ce n’est pas une mort.';
+      if (loot) txt += ins > 0 ? ` Ton butin non banqué reste au fond (Bourse de secours : ${Math.round(ins * 100)} % sauvés).` : ' Ton butin non banqué reste au fond.';
+      box.appendChild(el('p', '', txt));
+      const row = el('div', 'row confirm');
+      row.appendChild(this._button('Annuler', () => { build(); focusFirst(); }, 'primary', 'cancel'));
+      row.appendChild(this._arm(this._button('Remonter au camp', onRescue, 'danger', 'rescue-confirm')));
       box.appendChild(row);
       this._keepClear(row.lastChild);
       this.current._onBack = () => { build(); focusFirst(); };
@@ -522,7 +669,8 @@ export class UI {
     const box = el('div', 'panel wide death');
     const abandon = d.cause === 'abandon';
     box.appendChild(el('h2', 'red', abandon ? 'Expédition abandonnée' : 'Tu as péri'));
-    box.appendChild(el('p', 'lead', `${abandon ? 'Abandon' : 'Mort'} à −${d.depth || 0} m${abandon ? '' : ' · ' + causeText(d.cause)}`));
+    const where = d.depth > 0 ? `à −${d.depth} m` : 'au camp';
+    box.appendChild(el('p', 'lead', `${abandon ? 'Abandon' : 'Mort'} ${where}${abandon ? '' : ' · ' + causeText(d.cause)}`));
 
     const cols = el('div', 'cols');
     const lost = el('div', 'col lost');
@@ -543,8 +691,8 @@ export class UI {
     if (!chips.childNodes.length) chips.appendChild(el('span', 'none', 'Rien : ton sac était vide.'));
     lost.appendChild(chips);
     if (d.relics && d.relics.length) {
-      const rl = el('div', 'chips relics');
-      for (const k of d.relics) { const r = RELICS[k]; if (!r) continue; const ch = el('span', 'chip relic'); ch.title = r.desc; ch.appendChild(icon(r.icon, 16)); ch.appendChild(document.createTextNode(r.name)); rl.appendChild(ch); }
+      const rl = el('div', d.relics.length > 4 ? 'chips relics many' : 'chips relics'); // many: icons only on short screens
+      for (const k of d.relics) { const r = RELICS[k]; if (!r) continue; const ch = el('span', 'chip relic'); ch.title = r.name + ' : ' + r.desc; ch.appendChild(icon(r.icon, 16)); ch.appendChild(el('span', 'rn', r.name)); rl.appendChild(ch); }
       lost.appendChild(rl);
     }
     cols.appendChild(lost);
@@ -562,7 +710,7 @@ export class UI {
     box.appendChild(cols);
 
     const stats = el('div', 'statline');
-    const bits = [`Plus profond : −${d.bestDepth || 0} m`, `Ennemis vaincus : ${d.kills || 0}`, `Minerais : ${d.ore || 0}`];
+    const bits = [`Plus profond : ${fmtDepth(d.bestDepth || 0)}`, `Ennemis vaincus : ${d.kills || 0}`, `Minerais : ${d.ore || 0}`];
     if (d.chests) bits.push(`Coffres : ${d.chests}`);
     bits.push(`Durée : ${fmtTime(d.time)}`);
     stats.textContent = bits.join(' · ');

@@ -33,6 +33,11 @@ const G = {
   '=': '....|....|####|....|####|....|....', '_': '....|....|....|....|....|....|####', '—': '......|......|......|######|......|......|......',
   '·': '.|.|.|#|.|.|.', '*': '.....|#.#.#|.###.|#####|.###.|#.#.#|.....', '#': '.#.#.|#####|.#.#.|.#.#.|.#.#.|#####|.#.#.',
 };
+// arrows (tips: "↓ + X", "Pause → …")
+G['↑'] = '..#..|.###.|#.#.#|..#..|..#..|..#..|..#..';
+G['↓'] = '..#..|..#..|..#..|..#..|#.#.#|.###.|..#..';
+G['←'] = '.......|..#....|.#.....|#######|.#.....|..#....|.......';
+G['→'] = '.......|....#..|.....#.|#######|.....#.|....#..|.......';
 // typographic aliases
 G['≈'] = '.....|.##.#|#..#.|.....|.##.#|#..#.|.....';
 G['−'] = G['-']; G['–'] = G['-']; G['«'] = '.....|..#.#|.#.#.|#.#..|.#.#.|..#.#|.....'; G['»'] = '.....|#.#..|.#.#.|..#.#|.#.#.|#.#..|.....';
@@ -91,31 +96,81 @@ export function measureText(str) {
   return Math.max(0, w - 1);
 }
 
+/** Draw every glyph of `s` (already upper-cased) in one colour at (cx, y) = cap top. */
+function glyphPass(ctx, s, cx, y, col) {
+  const a = atlas(col);
+  let px = cx;
+  for (const c of s) {
+    if (c === ' ') { px += 3; continue; }
+    const i = INDEX.get(c);
+    if (i === undefined) { px += 4; continue; }
+    ctx.drawImage(a, i * CELL_W, 0, CELL_W, CELL_H, px, y - 2, CELL_W, CELL_H);
+    px += WIDTH.get(c) + 1;
+  }
+}
+
+// Finished labels (fill + outline or shadow) cached as small canvases: an outlined label
+// used to cost 6 drawImage calls per glyph every frame (≈ 90 % of all HUD draw calls);
+// now it is one drawImage. Keyed style -> colour -> raw string (three Map lookups, no
+// string building per frame); a colour's map is dropped when it grows past LABEL_MAX
+// (changing numbers), so memory stays bounded.
+const LABELS = { outline: new Map(), shadow: new Map() };
+const LABEL_MAX = 160;
+let labelsBuilt = 0;
+
+function cachedLabel(kind, styleCol, color, str) {
+  let byColor = LABELS[kind].get(styleCol);
+  if (!byColor) { byColor = new Map(); LABELS[kind].set(styleCol, byColor); }
+  let byText = byColor.get(color);
+  if (!byText) { byText = new Map(); byColor.set(color, byText); }
+  let e = byText.get(str);
+  if (e) return e;
+  if (byText.size >= LABEL_MAX) byText.clear();
+  const s = normalize(str);
+  const w = measureText(s);
+  const c = document.createElement('canvas');
+  // glyph cells span y - 2 .. y - 2 + CELL_H; outline adds 1 px around, the shadow 1 px right / below
+  const pad = kind === 'outline' ? 1 : 0;
+  c.width = Math.max(1, w + 2 * pad + 1 + 4);
+  c.height = CELL_H + 2 * pad + 1;
+  const g = c.getContext('2d');
+  const ox = pad, oy = pad + 2; // label origin (cap top-left) inside the canvas
+  if (kind === 'outline') {
+    glyphPass(g, s, ox - 1, oy, styleCol); glyphPass(g, s, ox + 1, oy, styleCol);
+    glyphPass(g, s, ox, oy - 1, styleCol); glyphPass(g, s, ox, oy + 1, styleCol);
+    glyphPass(g, s, ox + 1, oy + 1, styleCol);
+  } else glyphPass(g, s, ox + 1, oy + 1, styleCol);
+  glyphPass(g, s, ox, oy, color);
+  e = { canvas: c, w, ox, oy };
+  byText.set(str, e);
+  labelsBuilt++;
+  return e;
+}
+
+/** Number of label canvases built so far (tests / debug). */
+export function labelStats() { return { built: labelsBuilt }; }
+
 /**
  * Draw text; returns its width. opts: { align:'left'|'center'|'right', shadow:true|color|false,
  * outline:false|color, alpha }
  */
 export function drawText(ctx, str, x, y, color = '#ffffff', opts = {}) {
-  const s = normalize(str);
-  const w = measureText(s);
-  let cx = Math.round(opts.align === 'center' ? x - w / 2 : opts.align === 'right' ? x - w : x);
-  y = Math.round(y);
   const prevAlpha = ctx.globalAlpha;
   if (opts.alpha !== undefined) ctx.globalAlpha = prevAlpha * opts.alpha;
-  const pass = (col, dx, dy) => {
-    const a = atlas(col);
-    let px = cx + dx;
-    for (const c of s) {
-      if (c === ' ') { px += 3; continue; }
-      const i = INDEX.get(c);
-      if (i === undefined) { px += 4; continue; }
-      ctx.drawImage(a, i * CELL_W, 0, CELL_W, CELL_H, px, y - 2 + dy, CELL_W, CELL_H);
-      px += WIDTH.get(c) + 1;
-    }
-  };
-  if (opts.outline) { const o = opts.outline; pass(o, -1, 0); pass(o, 1, 0); pass(o, 0, -1); pass(o, 0, 1); pass(o, 1, 1); }
-  else if (opts.shadow !== false) pass(typeof opts.shadow === 'string' ? opts.shadow : '#07040c', 1, 1);
-  pass(color, 0, 0);
+  let w;
+  if (opts.outline || opts.shadow !== false) {
+    const e = opts.outline
+      ? cachedLabel('outline', opts.outline, color, str)
+      : cachedLabel('shadow', typeof opts.shadow === 'string' ? opts.shadow : '#07040c', color, str);
+    w = e.w;
+    const cx = Math.round(opts.align === 'center' ? x - w / 2 : opts.align === 'right' ? x - w : x);
+    ctx.drawImage(e.canvas, cx - e.ox, Math.round(y) - e.oy);
+  } else {
+    const s = normalize(str);
+    w = measureText(s);
+    const cx = Math.round(opts.align === 'center' ? x - w / 2 : opts.align === 'right' ? x - w : x);
+    glyphPass(ctx, s, cx, Math.round(y), color);
+  }
   ctx.globalAlpha = prevAlpha;
   return w;
 }
@@ -149,6 +204,8 @@ export class Hud {
     this.tallyData = null; this.tallyT = 0; this.tallyShown = 0; this.tallyFrom = 0; this.tallyTick = 0; this.tallyDone = false;
     this.bankShown = 0;  // banked gold as displayed (counts up after a tally)
     this.goldPulse = 0;
+    this.tipData = null; // onboarding tip on screen: { a, b, key, t, life }
+    this.tipQueue = [];
     this.txt = {
       hp: new TextMemo((a, b) => `${a}/${b}`), gold: new TextMemo((a) => String(a)), bag: new TextMemo((a, b) => `${a}/${b}`),
       est: new TextMemo((a) => `≈${a}`), bank: new TextMemo((a) => String(a)), depth: new TextMemo((a) => (a > 0 ? `-${a} M` : '0 M')),
@@ -159,6 +216,7 @@ export class Hud {
   /** New world: drop pending messages and the tally. */
   reset() {
     this.toasts.length = 0; this.queue.length = 0;
+    this.tipData = null; this.tipQueue.length = 0;
     this.tallyData = null; this.tallyT = 0;
     this.hurtFlash = 0; this.flashT = 0;
     this.bankShown = this.game.save ? this.game.save.gold : 0;
@@ -179,6 +237,34 @@ export class Hud {
     if (this.toasts.length < MAX_TOASTS) this.toasts.push(t);
     else { this.queue.push(t); if (this.queue.length > MAX_QUEUE) this.queue.shift(); }
   }
+
+  /**
+   * Onboarding tip (tips.js): a two-line panel under the top HUD row, one at a time.
+   * It waits while a banner or the banking tally is up, then stays `life` seconds.
+   */
+  tip(a, b = '', opts = {}) {
+    const t = { a, b, key: opts.key || a, t: 0, life: opts.life ?? 6.5 };
+    if (this.tipData && this.tipData.key === t.key) { this.tipData.t = Math.min(this.tipData.t, 0.3); return; }
+    if (this.tipQueue.some((q) => q.key === t.key)) return;
+    if (!this.tipData) { this.tipData = t; return; }
+    this.tipQueue.push(t);
+    if (this.tipQueue.length > 4) this.tipQueue.shift();
+    // the newer tip is about what the player is doing now: cut a tip read for 3 s short
+    const cur = this.tipData;
+    if (cur.t >= 3) cur.life = Math.min(cur.life, cur.t + 0.4);
+  }
+
+  /** Drop a tip that is no longer needed (the player already did it): queued, or just appearing. */
+  cancelTip(key) {
+    this.tipQueue = this.tipQueue.filter((q) => q.key !== key);
+    const cur = this.tipData;
+    if (cur && cur.key === key) {
+      if (cur.t < 0.3) this.tipData = this.tipQueue.length ? this.tipQueue.shift() : null;
+      else cur.life = Math.min(cur.life, cur.t + 0.4);
+    }
+  }
+
+  get tipActive() { return !!this.tipData; }
 
   /** Big layer / event banner. */
   banner(title, sub = '') { this.bannerTitle = title; this.bannerSub = sub; this.bannerT = 3.2; }
@@ -223,6 +309,10 @@ export class Hud {
   get tallyActive() { return !!this.tallyData; }
 
   update(dt) {
+    if (this.tipData && this.bannerT <= 0 && !this.tallyData) {
+      this.tipData.t += dt;
+      if (this.tipData.t >= this.tipData.life) this.tipData = this.tipQueue.length ? this.tipQueue.shift() : null;
+    }
     for (const t of this.toasts) t.t += dt;
     for (let i = this.toasts.length - 1; i >= 0; i--) if (this.toasts[i].t >= this.toasts[i].life) this.toasts.splice(i, 1);
     while (this.toasts.length < MAX_TOASTS && this.queue.length) this.toasts.push(this.queue.shift());
@@ -384,8 +474,12 @@ export class Hud {
     // --- banking tally
     if (this.tallyData) this.drawTally(ctx, W, H);
 
+    // --- onboarding tip (waits for the banner and the tally)
+    let tipBottom = 0;
+    if (this.tipData && this.bannerT <= 0 && !this.tallyData && !bar) tipBottom = this.drawTip(ctx, W, T + 38);
+
     // --- toasts
-    let ty = Math.round(H * (this.tallyData ? 0.58 : 0.36));
+    let ty = Math.max(Math.round(H * (this.tallyData ? 0.58 : 0.36)), tipBottom + 6);
     for (const t of this.toasts) {
       const a = Math.min(1, t.t / 0.08, (t.life - t.t) / 0.3);
       const rise = Math.round(Math.min(1, t.t / 0.15) * -4);
@@ -420,6 +514,28 @@ export class Hud {
       const dbg = `${g.fps | 0} FPS  X${p.tileX} Y${p.tileY}  ${g.player.grapple.state.toUpperCase()}${g.flags.god ? '  GOD' : ''}`;
       drawText(ctx, dbg, L, H - 12, '#7fffd4');
     }
+  }
+
+  /** Tip panel centred at y0; returns its bottom edge. */
+  drawTip(ctx, W, y0) {
+    const d = this.tipData;
+    const a = Math.min(1, d.t / 0.25, (d.life - d.t) / 0.4);
+    if (a <= 0) return 0;
+    const wa = measureText(d.a), wb = d.b ? measureText(d.b) : 0;
+    const pw = Math.min(W - 12, Math.max(wa, wb) + 16), ph = d.b ? 25 : 15;
+    const px = Math.round(W / 2 - pw / 2), py = Math.round(y0 + (1 - Math.min(1, d.t / 0.25)) * -4);
+    const prev = ctx.globalAlpha;
+    ctx.globalAlpha = prev * a * 0.8;
+    ctx.fillStyle = '#07040c'; ctx.fillRect(px, py, pw, ph);
+    ctx.globalAlpha = prev * a;
+    ctx.fillStyle = '#6a5238';
+    ctx.fillRect(px, py, pw, 1); ctx.fillRect(px, py + ph - 1, pw, 1); ctx.fillRect(px, py, 1, ph); ctx.fillRect(px + pw - 1, py, 1, ph);
+    ctx.fillStyle = '#e8c878';
+    ctx.fillRect(px - 1, py - 1, 3, 1); ctx.fillRect(px + pw - 2, py - 1, 3, 1); ctx.fillRect(px - 1, py + ph, 3, 1); ctx.fillRect(px + pw - 2, py + ph, 3, 1);
+    ctx.globalAlpha = prev;
+    drawText(ctx, d.a, W / 2, py + 4, '#ffe6a0', { align: 'center', outline: '#07040c', alpha: a });
+    if (d.b) drawText(ctx, d.b, W / 2, py + 14, '#d8cdb0', { align: 'center', outline: '#07040c', alpha: a });
+    return py + ph;
   }
 
   /** "Butin mis à l'abri" panel: ore icons × counts, coins, and the counting total. */

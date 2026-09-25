@@ -38,8 +38,8 @@ const DEFS = [
   ['silver',       'Argent',                true,  0,   0,  7,  0.08, { colors: ['#3a3f4a', '#8c96a8', '#c8d0de', '#ffffff'], ore: true, host: 'brick', base: 'stone', sound: 'metal', lightColor: [200, 215, 255] }],
   ['gold',         'Or',                    true,  0,   0,  12, 0.12, { colors: ['#4a2e05', '#b8860b', '#eab308', '#fff3a3'], ore: true, host: 'granite', base: 'granite', sound: 'metal', lightColor: [255, 210, 80] }],
   ['amethyst',     'Améthyste',             true,  0,   0,  18, 0.4,  { colors: ['#2a0f45', '#6b2fb0', '#a45ee8', '#e3c4ff'], ore: true, host: 'crystal_rock', base: 'crystal_rock', sound: 'crystal', lightColor: [170, 90, 255] }],
-  ['ruby',         'Rubis',                 true,  0,   0,  30, 0.35, { colors: ['#3d0610', '#9e1530', '#e0304e', '#ffa0b0'], ore: true, host: 'basalt', base: 'basalt', sound: 'crystal', lightColor: [255, 50, 80] }],
-  ['mithril',      'Mithril',               true,  0,   0,  50, 0.45, { colors: ['#0a3a44', '#2aa3b8', '#6ee7f5', '#e0ffff'], ore: true, host: 'obsidian', base: 'obsidian', sound: 'metal', lightColor: [90, 230, 255] }],
+  ['ruby',         'Rubis',                 true,  0,   0,  36, 0.35, { colors: ['#3d0610', '#9e1530', '#e0304e', '#ffa0b0'], ore: true, host: 'basalt', base: 'basalt', sound: 'crystal', lightColor: [255, 50, 80] }],
+  ['mithril',      'Mithril',               true,  0,   0,  60, 0.45, { colors: ['#0a3a44', '#2aa3b8', '#6ee7f5', '#e0ffff'], ore: true, host: 'obsidian', base: 'obsidian', sound: 'metal', lightColor: [90, 230, 255] }],
   // specials
   ['crystal',      'Cristal',               true,  4,   2,  0,  0.75, { colors: ['#0a2a3a', '#1e7fa0', '#5fd3f0', '#d8f8ff'], sound: 'crystal', base: 'crystal_rock', lightColor: [80, 200, 255] }],
   ['life_crystal', 'Cristal de vie',        true,  3,   0,  0,  0.6,  { colors: ['#3a0a1a', '#b0204a', '#ff5a7a', '#ffd0dc'], sound: 'crystal', drop: 'heal', base: 'stone', lightColor: [255, 70, 110] }],
@@ -54,6 +54,9 @@ const DEFS = [
   ['post',         'Poteau',                false, 0,   0,  0,  0,    { colors: ['#24150c', '#4f3019', '#6e4424', '#8f5c32'], deco: true }],
   // boss arena portcullis: seals the Heart's entrance while the Guardian fights
   ['gate',         'Herse du Cœur',         true,  Infinity, 99, 0, 0, { colors: ['#0c0a10', '#2c2a36', '#555868', '#9aa0b4'], sound: 'metal' }],
+  // planks over the camp shaft: one strike opens the whole trapdoor, it closes again
+  // behind the hero once they are back on the camp ground (main.js campTrapdoor)
+  ['trapdoor',     'Trappe du puits',       true,  1,   0,  0,  0,    { colors: ['#24150c', '#5a3a1e', '#7a5028', '#a06a36'], sound: 'wood' }],
 ];
 
 /** TILES[id] -> definition */

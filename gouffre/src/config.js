@@ -113,6 +113,7 @@ export const PLAYER = {
   lanternRadius: 6.5,      // tiles
   bagCapacity: 10,
   holeAssistSpeed: 70,     // px/s slide toward a 1-wide hole under the feet
+  ledgeAssist: 10,         // px: airborne and pushing into a wall whose top is at most this far above the feet -> pop onto it
   landDustSpeed: 230,
 };
 
@@ -139,6 +140,14 @@ export const GRAPPLE = {
   payOutMul: 1.15,         // max rope length = range × this (or the attach length if longer)
   maxCorrection: 6,        // px: largest positional rope correction per tick (no teleports)
   damping: 0.0015,         // per-tick velocity damping while swinging
+  // climbing: Grappin pressed while attached and standing, hanging from a short rope
+  // (length <= climbMaxLength), holding up or hanging almost still hops off the rope (same
+  // boost as Saut) and re-fires the hook at the top of the hop, so mashing Grappin climbs a
+  // shaft; during a real swing the press lets go as before
+  climbMaxLength: 40,      // px
+  climbStillSpeed: 90,     // px/s: hanging slower than this also counts as "climb" (faster = a swing: let go)
+  climbApexVy: -40,        // re-fire once the hop slows to this vertical speed (px/s)...
+  climbRefireMax: 0.4,     // ...or after this many seconds at most
 };
 
 // ---------------------------------------------------------------- camera
@@ -269,8 +278,11 @@ export const DROPS = {
 // meta.UPGRADES and were set with `node tools/economy.mjs` (curve in NOTES-core.md).
 export const ECONOMY = {
   oreChunksPerTile: 1,
-  chestGoldBase: 16,        // gold chest value = base × (1 + depth × chestGoldPerM), in coins
-  chestGoldPerM: 1 / 25,
+  // gold chest value = base × (1 + depth × chestGoldPerM), in coins. Every new mine (death,
+  // abandon) refills its chests, so a chest is worth about a minute of mining at its depth:
+  // opening chests and rerolling must not out-earn digging (step 2b: 16 × (1 + d/25), 3-4×)
+  chestGoldBase: 7,
+  chestGoldPerM: 1 / 30,
   chestCoins: 8,
   chestInteract: 18,        // px: horizontal reach of the "Ouvrir" button around a chest
   // relic rarity weights per chest layer [common, uncommon, rare] (deeper = rarer relics)
@@ -356,9 +368,12 @@ export const WORLDGEN = {
     silver: { d0: 58, d1: 99, veins: 8, size: [2, 4] },
     gold: { d0: 100, d1: 179, veins: 13, size: [2, 5] },
     amethyst: { d0: 115, d1: 179, veins: 8, size: [2, 4] },
-    ruby: { d0: 180, d1: 259, veins: 11, size: [2, 4] },
-    mithril: { d0: 205, d1: 259, veins: 7, size: [1, 3] },
+    // the Abyss must out-earn the crystal caves (DESIGN §2: deeper = richer): denser veins
+    // than step 2b (11 × 2-4 / 7 × 1-3) plus rubies in the crust of the lava lakes
+    ruby: { d0: 180, d1: 259, veins: 24, size: [3, 5] },
+    mithril: { d0: 205, d1: 259, veins: 15, size: [2, 4] },
   },
+  lavaCrustOre: { key: 'ruby', chance: 0.14 }, // natural rock beside lava (layer 4) turns into ruby
   minOreTiles: 8,
   spawnSpacing: 5,
   chestSpacing: 9,

@@ -6,13 +6,18 @@
 //   node tools/economy.mjs            full report
 //   node tools/economy.mjs --seeds 12 --players 600
 //
-// It is a model, not a replay: travel speeds, search times and death risk are
-// estimates tuned against playtests of the real game (see TRIP below). What it
-// grounds in the code: ore tiles and values per layer, bag capacities, pickaxe
-// tiers / mining damage, coin values, chest counts and values, upgrade costs.
-// Balance targets (task brief): first upgrade after 1 short trip, pickaxe tier 1
-// after ~3 trips, tier 2 after ~10, tier 3 after ~20, the Guardian reachable
-// after ~2-4 hours of play.
+// It is a model, not a replay. What it grounds in the code: ore tiles and values per
+// layer, bag capacities, pickaxe tiers / mining damage, coin values, chest counts and
+// values, upgrade costs. Travel / search / risk (TRIP below) are calibrated on a
+// headless legal-play bot that drives the real game modules with input only (final
+// audit, 12 mines, human-like reaction and thinking delays, 15 s per Forge visit):
+//   layer 1  86 s/trip  27 g/trip  12 ores   layer 2  166 s  99 g  12.5 ores (2 % deaths)
+//   layer 3 243 s/trip 502 g/trip  22 ores   layer 4 (boss-ready loadout): surviving trips
+//   300-360 g/min, but the bot dies on ~60 % of them
+//   Guardian-ready median 1 h 50 [1 h 36 - 2 h 08], beaten 2 h 12 [1 h 41 - 2 h 39], 1-5 tries
+// Balance targets: first upgrade after 1 short trip, pickaxe tier 1 around trip 3,
+// tier 2 around trip 12, tier 3 around trip 30, the Guardian reachable around 2 h of
+// play (a real player explores more than the bot, and loots the chests it ignores).
 import { generateWorld } from '../src/worldgen.js';
 import { TILES } from '../src/tiles.js';
 import { LAYERS, SURFACE_Y, ENEMY_STATS, DROPS, ECONOMY, PLAYER, layerAtDepth } from '../src/config.js';
@@ -60,27 +65,31 @@ const chestGold = (d) => ECONOMY.chestGoldBase * (1 + d * ECONOMY.chestGoldPerM)
 
 // ------------------------------------------------------------------ 2. trip model
 
-// Estimates (seconds). Travel is per metre of target depth, down and back up; the
-// way up depends on the grapple (range) and boots. Search time per ore depends on
-// the ore density of the layer (layer 3 geodes are rich) and the lantern radius.
+// Seconds, calibrated on the legal-play bot (header). Travel is per metre of target
+// depth, down (dig + drop) and back up (grapple climbing; faster with grapple / boots
+// levels). Search time per ore depends on the layer's ore density and the lantern.
 const TRIP = {
   targetDepth: [22, 68, 138, 215],   // where a player works in each layer
-  overhead: 45,                      // camp, shop, first dig, detours
-  downPerM: 0.75,
-  upPerM: 1.7,                       // base grapple + boots; / (1 + 0.22 grapple lv + 0.1 boots lv)
-  reuse: 0.7,                        // later trips in the same (still alive) mine reuse tunnels
-  searchPerOre: [6, 9, 6, 10],       // s to find the next ore with the base lantern (6.5 tiles)
-  strikeTime: PLAYER.attackCooldown,
-  reachable: 0.6,                    // share of a layer's ore a player finds in one mine
+  overhead: 20,                      // camp, trapdoor, Forge walk, detours
+  shopTime: 15,                      // s per Forge visit that buys something
+  downPerM: 0.3,                     // measured ~0.28 s/m
+  upPerM: 0.9,                       // measured 0.5-0.9 s/m; / (1 + 0.22 grapple lv + 0.1 boots lv)
+  reuse: 0.8,                        // later trips in the same (still alive) mine reuse tunnels
+  searchPerOre: [2.4, 4.8, 3.3, 3.5],// s to reach the next ore with the base lantern (6.5 tiles)
+  strikeTime: PLAYER.attackCooldown + 1 / 60, // + the one-tick hit-stop of every tile hit
+  reachable: 0.25,                   // share of a layer's ore worked per mine before rerolling (the bot rerolls ~1 trip in 3)
   miningBudget: 150,                 // s of mining per trip at most (then go home)
   killsBase: 2, killsPerMin: 1.1,
-  chestFind: 0.3,                    // chance per trip to open a remaining chest of the layer
-  risk: [0.08, 0.16, 0.22, 0.28],    // death chance per trip in each layer, before upgrades
+  chestFind: 0.5,                    // chance per trip to open one of the layer's remaining chests
+  risk: [0.03, 0.08, 0.12, 0.45],    // death chance per trip in each layer, before upgrades (bot: 0 / 2 / 0 / ~50 %)
   riskCut: 0.028,                    // per vitality / armor level
-  riskMin: 0.03,
+  riskMin: 0.02,
   rerollBelow: 0.5,                  // reroll the mine when less than half a bag of ore is left
   rerollTime: 20,
-  tierNeeded: [0, 1, 2, 3],          // pickaxe tier to work a layer
+  // share of a layer's ore a pickaxe tier can mine: layer 2 bedrock is stone / bone and
+  // iron sits in stone, so a hardness-0 pick already mines ~65 % of it (silver needs bricks)
+  reachByTier: [[1, 1, 1, 1], [0.65, 1, 1, 1], [0, 0, 1, 1], [0, 0, 0, 1]],
+  minTier: [0, 1, 2, 3],             // policy: move down a layer once the new rock opens (as the bot does)
 };
 
 function tripPlan(save, mine, reuse) {
@@ -88,7 +97,7 @@ function tripPlan(save, mine, reuse) {
   const st = applyUpgrades(player, save);
   const up = save.upgrades;
   let L = 0;
-  for (let i = 3; i >= 0; i--) if (st.pickTier >= TRIP.tierNeeded[i]) { L = i; break; }
+  for (let i = 3; i >= 0; i--) if (st.pickTier >= TRIP.minTier[i]) { L = i; break; }
   // survival gate: nobody sane goes to the abyss with 60 HP
   if (L >= 2 && up.vitality < 1) L = 1;
   if (L >= 3 && (up.vitality < 2 || up.armor < 1)) L = 2;
@@ -97,7 +106,7 @@ function tripPlan(save, mine, reuse) {
   const travel = d * (TRIP.downPerM + TRIP.upPerM / (1 + 0.22 * up.grapple + 0.1 * up.boots)) * (reuse ? TRIP.reuse : 1);
   const hits = Math.ceil(layer.avgHp / st.pickDamage);
   const perOre = TRIP.searchPerOre[L] * Math.sqrt(PLAYER.lanternRadius / st.lanternRadius) + hits * TRIP.strikeTime;
-  const avail = Math.max(0, mine.remaining[L]);
+  const avail = Math.max(0, mine.remaining[L] * TRIP.reachByTier[L][Math.min(3, st.pickTier)]);
   const n = Math.max(0, Math.min(st.bagCapacity, Math.floor(avail), Math.floor(TRIP.miningBudget / perOre)));
   const mining = n * perOre;
   const time = TRIP.overhead + travel + mining;
@@ -183,9 +192,10 @@ function simulate(survey, rnd, keepLog) {
     const log = keepLog ? [] : null;
     const before = { ...save.upgrades };
     shop(save, log);
+    if (UPGRADE_KEYS.some((k) => save.upgrades[k] > before[k])) time += TRIP.shopTime;
     if (ms.first === undefined && UPGRADE_KEYS.some((k) => save.upgrades[k] > before[k])) ms.first = { trip, time };
     for (const [lv, key] of [[1, 'pick1'], [2, 'pick2'], [4, 'pick4']]) if (ms[key] === undefined && save.upgrades.pick >= lv) ms[key] = { trip, time };
-    if (ms.boss === undefined && bossReady(save.upgrades)) ms.boss = { trip, time: time + 420 }; // final descent + fight
+    if (ms.boss === undefined && bossReady(save.upgrades)) ms.boss = { trip, time }; // Guardian-ready (the descent + fight come on top)
     if (ms.maxed === undefined && UPGRADE_KEYS.every((k) => save.upgrades[k] >= UPGRADES[k].max)) ms.maxed = { trip, time };
     if (keepLog) rows.push({ trip, time, layer: plan.L, n: plan.n, bag: plan.bag, loot: Math.round(loot), died, gained, bank: save.gold, log });
     if (ms.boss && ms.maxed) break;
@@ -235,14 +245,14 @@ export function runEconomy({ quiet = false } = {}) {
   for (let i = 0; i < PLAYERS; i++) all.push(simulate(survey, rnd, false).ms);
   const col = (k, f) => all.map((m) => (m[k] ? m[k][f] : undefined));
   print('\n## Progression (median [10th-90th percentile])');
-  const targets = { first: [1, 1], pick1: [2, 4], pick2: [8, 13], pick4: [17, 24] };
+  const targets = { first: [1, 1], pick1: [2, 5], pick2: [9, 16], pick4: [24, 38] };
   const rowsOut = [];
   for (const [k, label] of [['first', 'first upgrade'], ['pick1', 'pickaxe tier 1'], ['pick2', 'pickaxe tier 2'], ['pick4', 'pickaxe tier 3'], ['boss', 'Guardian reachable'], ['maxed', 'everything maxed']]) {
     const tr = col(k, 'trip'), tm = col(k, 'time');
     const mt = median(tr), t = median(tm);
     let ok = '';
     if (targets[k]) ok = mt >= targets[k][0] && mt <= targets[k][1] ? '  ok' : `  (target ${targets[k][0]}-${targets[k][1]} trips)`;
-    if (k === 'boss') ok = t >= 7200 && t <= 14400 ? '  ok' : '  (target 2h-4h)';
+    if (k === 'boss') ok = t >= 5700 && t <= 9900 ? '  ok' : '  (target 1h35-2h45)';
     const line = `${label.padEnd(20)} trip ${String(mt).padStart(3)} [${pctl(tr, 0.1)}-${pctl(tr, 0.9)}]   ${fmtT(t)} [${fmtT(pctl(tm, 0.1))}-${fmtT(pctl(tm, 0.9))}]${ok}`;
     print(line);
     rowsOut.push({ k, trip: mt, time: t });

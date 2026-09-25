@@ -12,7 +12,9 @@
 //     applyUpgrades(player, save, relics?) -> stats (base stats -> upgrades -> relics)
 //   Loot (pure helpers, the game calls them):
 //     bagValue(bag, mul), bankLoot(save, run, stats, { newTrip }) -> summary, settleDeath(save, run, stats, info) -> summary,
-//     clearLoot(run)
+//     forfeitLoot(save, run, stats) -> summary ("Corde de secours"), clearLoot(run)
+//   Transfer (Safari tab <-> home-screen app have separate storage):
+//     exportSave(save) -> 'GOUFFRE1:<base64>', importSave(text) -> save | null
 //
 // Numbers were balanced with `node tools/economy.mjs` (curve documented in NOTES-core.md).
 import { SAVE_KEY, MUTE_KEY, GRAPPLE, PLAYER, ECONOMY } from './config.js';
@@ -56,51 +58,51 @@ export const UPGRADES = {
   pick: {
     name: 'Pioche', icon: 'up_pick', max: 5,
     desc: 'Dégâts de minage et de combat. Chaque dureté débloque une roche.',
-    costs: [45, 300, 750, 1700, 3600],
+    costs: [45, 300, 1150, 2500, 5400],
     apply(s, lv) { const p = PICK[lv]; s.pickTier = p.tier; s.pickDamage = p.dig; s.attackDamage = p.atk; },
     effect(lv) { const p = PICK[lv]; return `Dureté ${p.tier} · ${p.atk} dég.`; },
     unlock(lv) { return lv > 0 && PICK[lv].tier > PICK[lv - 1].tier ? TIER_NAMES[PICK[lv].tier] : null; },
   },
   vitality: {
     name: 'Vitalité', icon: 'up_vitality', max: 5, desc: 'Points de vie maximum.',
-    costs: [20, 80, 240, 560, 1200],
+    costs: [20, 90, 360, 850, 1800],
     apply(s, lv) { s.maxHp = PLAYER.maxHp + VITALITY[lv]; },
     effect(lv) { return `${PLAYER.maxHp + VITALITY[lv]} PV`; },
   },
   armor: {
     name: 'Armure', icon: 'up_armor', max: 5, desc: 'Réduit les dégâts subis.',
-    costs: [35, 130, 360, 800, 1600],
+    costs: [35, 150, 540, 1200, 2400],
     apply(s, lv) { s.armor = ARMOR[lv]; },
     effect(lv) { return lv ? `−${pct(ARMOR[lv])} dégâts` : 'Aucune'; },
   },
   grapple: {
     name: 'Grappin', icon: 'up_grapple', max: 4, desc: 'Portée du crochet et vitesse d’enroulement.',
-    costs: [25, 100, 300, 700],
+    costs: [25, 110, 450, 1050],
     apply(s, lv) { s.grappleRange = Math.min(GRAPPLE.maxRange, GRAPPLE_RANGE[lv]); s.reelSpeed = GRAPPLE_REEL[lv]; },
     effect(lv) { return `Portée ${metres(GRAPPLE_RANGE[lv])}`; },
   },
   bag: {
     name: 'Sac', icon: 'up_bag', max: 5, desc: 'Minerais transportés par expédition.',
-    costs: [15, 60, 200, 520, 1100],
+    costs: [10, 60, 300, 780, 1700],
     apply(s, lv) { s.bagCapacity = BAG[lv]; },
     effect(lv) { return `${BAG[lv]} minerais`; },
   },
   lantern: {
     name: 'Lanterne', icon: 'up_lantern', max: 4, desc: 'Rayon de lumière dans les profondeurs.',
-    costs: [12, 50, 170, 450],
+    costs: [8, 50, 250, 670],
     apply(s, lv) { s.lanternRadius = LANTERN[lv]; },
     effect(lv) { return `Rayon ${num(LANTERN[lv])} m`; },
   },
   boots: {
     name: 'Bottes', icon: 'up_boots', max: 3, desc: 'Vitesse de course et hauteur de saut.',
-    costs: [30, 180, 550],
+    costs: [30, 260, 830],
     apply(s, lv) { s.maxSpeed = PLAYER.maxSpeed * BOOTS_SPEED[lv]; s.jumpVel = PLAYER.jumpVel * BOOTS_JUMP[lv]; },
     effect(lv) { return lv ? `+${pct(BOOTS_SPEED[lv] - 1)} vitesse` : 'Usées'; },
   },
   insurance: {
     name: 'Bourse de secours', icon: 'up_insurance', max: 2,
     desc: 'Part du butin non banqué conservée à la mort.',
-    costs: [90, 650],
+    costs: [90, 950],
     apply(s, lv) { s.insurance = INSURANCE[lv]; },
     effect(lv) { return `${pct(INSURANCE[lv])} conservé`; },
   },
@@ -238,9 +240,11 @@ export function defaultSave() {
       bestDepth: 0, deaths: 0, totalGold: 0, victories: 0, runs: 0,
       trips: 0,              // successful returns to the camp with loot
       kills: 0, spent: 0, playTime: 0, bestTrip: 0,
+      rescues: 0,            // "Corde de secours" used (pause menu, when stuck)
     },
-    settings: { muted: false, shake: true },
+    settings: { muted: false, shake: true, tips: true },
     ngPlus: 0,               // NG+ level: enemies × (1 + 0.5 × level)
+    tips: {},                // onboarding tips already shown: { key: 1 } (tips.js)
   };
 }
 
@@ -266,6 +270,10 @@ export function migrateSave(raw) {
   out.ngPlus = raw.ngPlus === true ? 1 : Math.min(99, int(raw.ngPlus));
   out.settings.muted = !!out.settings.muted;
   out.settings.shake = out.settings.shake !== false;
+  out.settings.tips = out.settings.tips !== false;
+  const tips = {};
+  for (const [k, v] of Object.entries(obj(raw.tips))) if (v && /^[a-z]{1,16}$/.test(k)) tips[k] = 1;
+  out.tips = tips;
   return out;
 }
 
@@ -366,6 +374,57 @@ export function bankLoot(save, run, stats = {}, opts = {}) {
   run.ore = (run.ore || 0) + (run.bagCount || 0);
   clearLoot(run);
   return { items, oreValue, gold, total, count: items.reduce((n, i) => n + i.count, 0) };
+}
+
+/**
+ * "Corde de secours" (pause menu, only offered when the hero is stuck): back to the camp
+ * alive, but the unbanked loot (backpack + run gold) stays at the bottom, minus the
+ * Bourse de secours share, which is banked. Relics and the mine are kept, no death is
+ * counted. Mutates save + run (loot cleared); returns { lostValue, kept, insurance, items, gold }.
+ */
+export function forfeitLoot(save, run, stats = {}) {
+  const items = bagItems(run.bag);
+  const oreValue = bagValue(run.bag, stats.oreMul || 1);
+  const gold = Math.max(0, Math.round(run.gold || 0));
+  const insurance = Math.max(0, Math.min(1, stats.insurance || 0));
+  const kept = Math.floor((oreValue + gold) * insurance);
+  save.gold += kept;
+  save.stats.totalGold += kept;
+  save.stats.rescues = (save.stats.rescues || 0) + 1;
+  save.stats.bestDepth = Math.max(save.stats.bestDepth, run.bestDepth || 0);
+  run.banked = (run.banked || 0) + kept;
+  clearLoot(run);
+  return { items, oreValue, gold, lostValue: oreValue + gold - kept, kept, insurance };
+}
+
+// ------------------------------------------------------------------ transfer
+
+const EXPORT_TAG = 'GOUFFRE1:';
+
+/** Save -> short text code (copy / paste between Safari and the home-screen app). */
+export function exportSave(save) {
+  const json = JSON.stringify(save);
+  const bytes = new TextEncoder().encode(json);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return EXPORT_TAG + btoa(bin);
+}
+
+/** Text code -> migrated save, or null when the code is not a Gouffre save. */
+export function importSave(text) {
+  if (typeof text !== 'string') return null;
+  const t = text.replace(/\s+/g, '');
+  if (!t.startsWith(EXPORT_TAG)) return null;
+  try {
+    const bin = atob(t.slice(EXPORT_TAG.length));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const raw = JSON.parse(new TextDecoder().decode(bytes));
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !('gold' in raw) || !('upgrades' in raw)) return null;
+    return migrateSave(raw);
+  } catch {
+    return null;
+  }
 }
 
 /**

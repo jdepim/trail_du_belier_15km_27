@@ -1231,7 +1231,7 @@ export class EnemyManager {
         if (pr.type === 'fireball' || pr.type === 'meteor') {
           // fire burns soft soil (dirt, grass) it hits; rock just stops it
           const tx = Math.floor(pr.x / TILE), ty = Math.floor(pr.y / TILE), id = world.get(tx, ty);
-          if (TILES[id].hp <= 1 && TILES[id].tier === 0) { world.set(tx, ty, TILE_ID.AIR); if (g.tileBroken) g.tileBroken(tx, ty, id, 'fire'); }
+          if (TILES[id].hp <= 1 && TILES[id].tier === 0 && !world.isLocked(tx, ty)) { world.set(tx, ty, TILE_ID.AIR); if (g.tileBroken) g.tileBroken(tx, ty, id, 'fire'); }
           pr.x -= pr.vx * dt; pr.y -= pr.vy * dt;
         }
         this._killProj(pr);

@@ -83,6 +83,8 @@ export class Grapple {
     this.predicted = null;
     this.predictedAngle = 0;
     this.attachTime = 0;
+    this.refireT = 0;      // > 0: a climb hop is under way, the hook re-fires at its top
+    this.attaches = 0;     // hooks that caught something (onboarding / stuck detection)
   }
 
   get attached() { return this.state === 'attached'; }
@@ -109,14 +111,39 @@ export class Grapple {
   }
 
   /**
-   * Grapple button pressed: fire, or let go / cancel. A press while the hook is
-   * still retracting re-fires at once (the old hook snaps back), so mashing
-   * Grappin right after a jump-release never loses the press.
+   * Grapple button pressed: fire, climb, let go or cancel. A press while the hook is
+   * still retracting re-fires at once (the old hook snaps back), so mashing Grappin
+   * right after a jump-release never loses the press. While attached the press climbs
+   * (hop off with the Saut boost, re-fire at the top of the hop: see wantsClimb) or,
+   * during a real swing, lets go.
    */
   onPress() {
-    if (this.state === 'idle' || this.state === 'retracting') this.fire();
-    else if (this.state === 'attached') this.release(false);
-    else if (this.state === 'flying') this.state = 'retracting';
+    if (this.state === 'idle' || this.state === 'retracting') { this.refireT = 0; this.fire(); }
+    else if (this.state === 'attached') {
+      if (this.wantsClimb()) this.climb();
+      else this.release(false);
+    } else if (this.state === 'flying') this.state = 'retracting';
+  }
+
+  /**
+   * Does a Grappin press while attached mean "higher" rather than "let go"? Yes when
+   * standing, on a short rope, holding up, or hanging almost still; a real swing (a long
+   * rope with some speed) lets go, so pendulum releases work as before.
+   */
+  wantsClimb() {
+    const p = this.player;
+    if (p.onGround || this.length <= GRAPPLE.climbMaxLength || this.game.input.moveY < -0.5) return true;
+    return Math.hypot(p.vx, p.vy) < GRAPPLE.climbStillSpeed;
+  }
+
+  /** Haul up: hop off the short rope (Saut boost) and re-fire the hook at the top of the hop. */
+  climb() {
+    if (this.state !== 'attached') return;
+    const p = this.player;
+    this.release(true);
+    p.jumping = false;
+    this.refireT = GRAPPLE.climbRefireMax;
+    this.game.audio.play('jump', { pitch: 1.15 });
   }
 
   fire() {
@@ -147,6 +174,8 @@ export class Grapple {
     this.length = Math.max(GRAPPLE.minLength, d);
     this.maxLength = Math.max(this.range * GRAPPLE.payOutMul, this.length);
     this.attachTime = g.time;
+    this.attaches++;
+    if (g.onGrappleAttach) g.onGrappleAttach();
     g.audio.play('grapple_attach');
     g.particles.spawn('spark', this.anchorX, this.anchorY, { count: 6 });
     g.camera.shake(1.2, 0.08);
@@ -223,6 +252,14 @@ export class Grapple {
   update(dt) {
     const g = this.game;
     this.prevHookX = this.hookX; this.prevHookY = this.hookY;
+    if (this.refireT > 0) {
+      // climb hop: re-fire near its apex (or when it was cut short: ceiling, landing, hurt)
+      const p = this.player;
+      this.refireT -= dt;
+      if (p.dead || p.hurtT > 0) this.refireT = 0;
+      else if (this.state === 'attached' || this.state === 'flying') this.refireT = 0;
+      else if (p.vy >= GRAPPLE.climbApexVy || this.refireT <= 0) { this.refireT = 0; this.fire(); }
+    }
     if (this.state === 'attached') {
       if (!g.world.isSolid(this.anchorTx, this.anchorTy)) {
         this.state = 'retracting';

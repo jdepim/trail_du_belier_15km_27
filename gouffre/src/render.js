@@ -119,33 +119,56 @@ export class Camera {
 // ------------------------------------------------------------------ renderer
 
 const MAX_CHUNKS = 28;
+const CHUNK_PX = CHUNK * TILE;
 
 export class Renderer {
+  /**
+   * Two present modes:
+   *  - default (CSS upscale): the display canvas IS the internal W×H image; its CSS size is
+   *    W·scale/dpr × H·scale/dpr and `image-rendering: pixelated` (index.html) lets the
+   *    compositor do the integer upscale. No full-resolution backing store, no per-frame
+   *    upscale copy (the old path cost ~15 ms a frame in a CPU-throttled browser).
+   *  - `?canvasscale` (fallback): draw into an off-screen W×H buffer and upscale it ×scale
+   *    into a device-pixel display canvas every frame (the step-1 renderer).
+   */
   constructor(game, display) {
     this.game = game;
     this.display = display;
+    this.cssUpscale = !(game.flags && game.flags.canvasScale);
     this.dctx = display.getContext('2d', { alpha: false });
-    this.buf = document.createElement('canvas');
-    this.ctx = this.buf.getContext('2d');
+    if (this.cssUpscale) { this.buf = display; this.ctx = this.dctx; }
+    else { this.buf = document.createElement('canvas'); this.ctx = this.buf.getContext('2d'); }
     this.scale = 1; this.W = 320; this.H = 180; this.offX = 0; this.offY = 0;
-    this.chunks = new Map(); // key -> { canvas, version, used }
+    this.chunks = new Map(); // key -> { canvas, version, used, world, logPos }
     this.frameNo = 0;
+    this.chunkBuilds = 0;    // full chunk rebuilds (stats for tests / debug)
+    this.cellPatches = 0;    // partial redraws of changed cells
+    this._builtThisFrame = 0;
+    this._logWorld = null; this._logSeen = 0;
     this._cam = { x: 0, y: 0 };
     this._pp = { x: 0, y: 0 };
   }
 
-  /** Size the display canvas to device pixels and pick the integer scale (§9). */
+  /** Pick the integer scale (§9) and size the canvases for a cssW × cssH viewport. */
   resize(cssW, cssH, dpr) {
     const devW = Math.max(1, Math.round(cssW * dpr)), devH = Math.max(1, Math.round(cssH * dpr));
-    this.display.width = devW; this.display.height = devH;
-    this.display.style.width = cssW + 'px'; this.display.style.height = cssH + 'px';
     this.scale = Math.max(1, Math.round(devH / BASE_VIEW_H));
     this.W = Math.floor(devW / this.scale);
     this.H = Math.floor(devH / this.scale);
-    this.buf.width = this.W; this.buf.height = this.H;
     this.offX = Math.floor((devW - this.W * this.scale) / 2);
     this.offY = Math.floor((devH - this.H * this.scale) / 2);
     this.cssToInternal = dpr / this.scale;
+    const st = this.display.style;
+    if (this.cssUpscale) {
+      this.display.width = this.W; this.display.height = this.H;
+      st.width = (this.W * this.scale) / dpr + 'px'; st.height = (this.H * this.scale) / dpr + 'px';
+      st.left = this.offX / dpr + 'px'; st.top = this.offY / dpr + 'px';
+    } else {
+      this.display.width = devW; this.display.height = devH;
+      st.width = cssW + 'px'; st.height = cssH + 'px';
+      st.left = '0px'; st.top = '0px';
+      this.buf.width = this.W; this.buf.height = this.H;
+    }
     this.ctx.imageSmoothingEnabled = false;
     this.dctx.imageSmoothingEnabled = false;
     const cam = this.game.camera;
@@ -153,12 +176,13 @@ export class Renderer {
   }
 
   /** Drop every cached chunk (new world). */
-  invalidateAll() { this.chunks.clear(); }
+  invalidateAll() { this.chunks.clear(); this._logWorld = null; }
 
   render(alpha) {
     const g = this.game;
     const ctx = this.ctx;
     this.frameNo++;
+    this._builtThisFrame = 0;
     const pp = this._playerPos(alpha);
     const cam = g.camera.renderPos(alpha, this._cam, pp.x, pp.y);
     const cx = cam.x, cy = cam.y;
@@ -179,10 +203,12 @@ export class Renderer {
     g.lighting.compute(cx, cy, this.W, this.H);
     g.lighting.draw(ctx, cx, cy, alpha);
     g.hud.draw(ctx, this.W, this.H);
-    // present: nearest-neighbour integer upscale
-    const d = this.dctx;
-    d.imageSmoothingEnabled = false;
-    d.drawImage(this.buf, 0, 0, this.W, this.H, this.offX, this.offY, this.W * this.scale, this.H * this.scale);
+    if (!this.cssUpscale) {
+      // present: nearest-neighbour integer upscale into the device-pixel canvas
+      const d = this.dctx;
+      d.imageSmoothingEnabled = false;
+      d.drawImage(this.buf, 0, 0, this.W, this.H, this.offX, this.offY, this.W * this.scale, this.H * this.scale);
+    }
   }
 
   // ---------------------------------------------------------------- backdrop
@@ -242,14 +268,43 @@ export class Renderer {
   // ---------------------------------------------------------------- tiles (chunk cache)
   drawTiles(ctx, cx, cy) {
     const world = this.game.world;
-    const c0x = Math.max(0, Math.floor(cx / (CHUNK * TILE))), c1x = Math.min(world.chunksX - 1, Math.floor((cx + this.W) / (CHUNK * TILE)));
-    const c0y = Math.max(0, Math.floor(cy / (CHUNK * TILE))), c1y = Math.min(world.chunksY - 1, Math.floor((cy + this.H) / (CHUNK * TILE)));
+    this._syncDirty(world);
+    const c0x = Math.max(0, Math.floor(cx / CHUNK_PX)), c1x = Math.min(world.chunksX - 1, Math.floor((cx + this.W) / CHUNK_PX));
+    const c0y = Math.max(0, Math.floor(cy / CHUNK_PX)), c1y = Math.min(world.chunksY - 1, Math.floor((cy + this.H) / CHUNK_PX));
     for (let ky = c0y; ky <= c1y; ky++) {
       for (let kx = c0x; kx <= c1x; kx++) {
         const canvas = this._chunk(kx, ky);
-        ctx.drawImage(canvas, kx * CHUNK * TILE - cx, ky * CHUNK * TILE - cy);
+        ctx.drawImage(canvas, kx * CHUNK_PX - cx, ky * CHUNK_PX - cy);
       }
     }
+    this._prefetch(world, c0x, c1x, c0y, c1y);
+  }
+
+  /**
+   * Keep a one-chunk ring around the view cached (at most one build per frame, and only
+   * in a frame that built nothing else), so a camera crossing a chunk boundary never has
+   * to build a whole row of chunks at once.
+   */
+  _prefetch(world, c0x, c1x, c0y, c1y) {
+    const x0 = Math.max(0, c0x - 1), x1 = Math.min(world.chunksX - 1, c1x + 1);
+    const y0 = Math.max(0, c0y - 1), y1 = Math.min(world.chunksY - 1, c1y + 1);
+    let missX = -1, missY = -1;
+    for (let ky = y0; ky <= y1; ky++) {
+      for (let kx = x0; kx <= x1; kx++) {
+        if (kx >= c0x && kx <= c1x && ky >= c0y && ky <= c1y) continue;
+        const key = ky * world.chunksX + kx;
+        const e = this.chunks.get(key);
+        if (e && e.world === world && e.version === world.chunkVersion[key]) e.used = this.frameNo; // keep it
+        else if (missX < 0) { missX = kx; missY = ky; }
+      }
+    }
+    if (missX < 0 || this._builtThisFrame > 0) return;
+    if (this.chunks.size >= MAX_CHUNKS && !this.chunks.has(missY * world.chunksX + missX)) {
+      let oldUsed = Infinity;
+      for (const v of this.chunks.values()) if (v.used < oldUsed) oldUsed = v.used;
+      if (oldUsed >= this.frameNo) return; // everything cached is in use: never evict a visible chunk
+    }
+    this._chunk(missX, missY);
   }
 
   _chunk(kx, ky) {
@@ -268,14 +323,65 @@ export class Renderer {
         this.chunks.delete(oldKey);
       } else {
         canvas = document.createElement('canvas');
-        canvas.width = CHUNK * TILE; canvas.height = CHUNK * TILE;
+        canvas.width = CHUNK_PX; canvas.height = CHUNK_PX;
       }
-      e = { canvas, version: -1, used: 0, world };
+      e = { canvas, version: -1, used: 0, world, logPos: 0 };
       this.chunks.set(key, e);
     }
     this._buildChunk(kx, ky, e.canvas);
-    e.version = ver; e.used = this.frameNo; e.world = world;
+    e.version = ver; e.used = this.frameNo; e.world = world; e.logPos = world.dirtyCount;
+    this._builtThisFrame++;
+    this.chunkBuilds++;
     return e.canvas;
+  }
+
+  /**
+   * Apply the world's changed-tile log to the cached chunks: each changed tile redraws
+   * only its 3×3 block of cells (a tile's edges / shadows / grass tufts read its four
+   * neighbours, and every tile draws strictly inside its own 16×16 cell). A chunk is
+   * patched only if it was current at the previous sync (logPos); anything else (log
+   * overflow, a chunk evicted meanwhile) keeps a stale version and is rebuilt in full.
+   */
+  _syncDirty(world) {
+    const count = world.dirtyCount;
+    if (this._logWorld !== world) { this._logWorld = world; this._logSeen = count; return; }
+    const seen = this._logSeen;
+    if (count === seen) return;
+    this._logSeen = count;
+    const log = world.dirtyLog, len = log.length;
+    if (count - seen > len) return; // overflow: the touched chunks rebuild in full
+    for (let s = seen; s < count; s++) {
+      const i = log[s % len];
+      const tx = i % world.w, ty = (i / world.w) | 0;
+      const kx0 = Math.max(0, Math.floor((tx - 1) / CHUNK)), kx1 = Math.min(world.chunksX - 1, Math.floor((tx + 1) / CHUNK));
+      const ky0 = Math.max(0, Math.floor((ty - 1) / CHUNK)), ky1 = Math.min(world.chunksY - 1, Math.floor((ty + 1) / CHUNK));
+      for (let ky = ky0; ky <= ky1; ky++) {
+        for (let kx = kx0; kx <= kx1; kx++) {
+          const e = this.chunks.get(ky * world.chunksX + kx);
+          if (!e || e.world !== world || e.logPos !== seen) continue;
+          const bx = kx * CHUNK, by = ky * CHUNK;
+          this._patchCells(e.canvas, world, bx, by,
+            Math.max(tx - 1, bx), Math.min(tx + 1, bx + CHUNK - 1, world.w - 1),
+            Math.max(ty - 1, by), Math.min(ty + 1, by + CHUNK - 1, world.h - 1));
+        }
+      }
+    }
+    // every chunk that was current is current again
+    for (const [key, e] of this.chunks) {
+      if (e.world === world && e.logPos === seen) { e.logPos = count; e.version = world.chunkVersion[key]; }
+    }
+  }
+
+  /** Redraw the cells [tx0..tx1] × [ty0..ty1] of a cached chunk whose top-left tile is (bx, by). */
+  _patchCells(canvas, world, bx, by, tx0, tx1, ty0, ty1) {
+    if (tx1 < tx0 || ty1 < ty0) return;
+    const g = canvas.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.clearRect((tx0 - bx) * TILE, (ty0 - by) * TILE, (tx1 - tx0 + 1) * TILE, (ty1 - ty0 + 1) * TILE);
+    for (let ty = ty0; ty <= ty1; ty++) {
+      for (let tx = tx0; tx <= tx1; tx++) this._drawCell(g, world, tx, ty, (tx - bx) * TILE, (ty - by) * TILE);
+    }
+    this.cellPatches++;
   }
 
   _buildChunk(kx, ky, canvas) {
@@ -290,33 +396,37 @@ export class Renderer {
       for (let i = 0; i < CHUNK; i++) {
         const tx = tx0 + i;
         if (tx >= world.w) break;
-        const px = i * TILE, py = j * TILE;
-        const id = world.get(tx, ty);
-        const h = hash2(tx, ty, 0x7157);
-        if (SOLID[id]) {
-          g.drawImage(getTileTexture(id, h % tileVariantCount(id)), px, py);
-          this._edges(g, world, tx, ty, px, py, id);
-        } else {
-          const back = world.getBack(tx, ty);
-          if (back) {
-            g.drawImage(getBackTexture(back, h % 3), px, py);
-            this._backShadow(g, world, tx, ty, px, py);
-          }
-          if (id !== T.AIR && id !== T.LAVA) { // deco (torch flames are drawn dynamically)
-            const n = tileVariantCount(id);
-            if (n) {
-              const tex = getTileTexture(id, (h >>> 3) % n);
-              // cobwebs hug the solid side
-              if (id === T.COBWEB && SOLID[world.get(tx + 1, ty)] && !SOLID[world.get(tx - 1, ty)]) {
-                g.save(); g.translate(px + TILE, py); g.scale(-1, 1); g.drawImage(tex, 0, 0); g.restore();
-              } else g.drawImage(tex, px, py);
-            }
-          }
-          // grass blades poking up from a grass tile below
-          if (world.get(tx, ty + 1) === T.GRASS) this._grassTuft(g, px, py, h);
-        }
+        this._drawCell(g, world, tx, ty, i * TILE, j * TILE);
       }
     }
+  }
+
+  /** One tile of a chunk canvas: texture + edges, or back wall + shadows + deco. Stays inside its cell. */
+  _drawCell(g, world, tx, ty, px, py) {
+    const id = world.get(tx, ty);
+    const h = hash2(tx, ty, 0x7157);
+    if (SOLID[id]) {
+      g.drawImage(getTileTexture(id, h % tileVariantCount(id)), px, py);
+      this._edges(g, world, tx, ty, px, py, id);
+      return;
+    }
+    const back = world.getBack(tx, ty);
+    if (back) {
+      g.drawImage(getBackTexture(back, h % 3), px, py);
+      this._backShadow(g, world, tx, ty, px, py);
+    }
+    if (id !== T.AIR && id !== T.LAVA) { // deco (torch flames are drawn dynamically)
+      const n = tileVariantCount(id);
+      if (n) {
+        const tex = getTileTexture(id, (h >>> 3) % n);
+        // cobwebs hug the solid side
+        if (id === T.COBWEB && SOLID[world.get(tx + 1, ty)] && !SOLID[world.get(tx - 1, ty)]) {
+          g.save(); g.translate(px + TILE, py); g.scale(-1, 1); g.drawImage(tex, 0, 0); g.restore();
+        } else g.drawImage(tex, px, py);
+      }
+    }
+    // grass blades poking up from a grass tile below
+    if (world.get(tx, ty + 1) === T.GRASS) this._grassTuft(g, px, py, h);
   }
 
   /** Dark outline + rim light on the air-facing sides of a solid tile. */

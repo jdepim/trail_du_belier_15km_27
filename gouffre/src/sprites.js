@@ -375,6 +375,26 @@ function texBeam(seed, cols) {
   return p;
 }
 
+/** Planks of the camp shaft's trapdoor (vertical boards, an iron band, a ring on the middle one). */
+function texTrapdoor(seed, cols, variant) {
+  const p = new Pix(TS, TS);
+  const r = mulberry32(seed);
+  const [c0, c1, c2, c3] = cols;
+  for (let y = 0; y < TS; y++) for (let x = 0; x < TS; x++) {
+    const seam = x % 5 === 4;
+    let col = seam ? c0 : bayer(x * 2, y) > 0.55 ? c1 : c2;
+    if (!seam && y === 0) col = c3;
+    if (y === 15) col = c0;
+    p.set(x, y, col);
+  }
+  // grain streaks
+  for (let k = 0; k < 4; k++) { const x = Math.floor(r() * 16); if (x % 5 !== 4) for (let y = 2 + Math.floor(r() * 4); y < 13; y += 3) p.set(x, y, c1); }
+  // iron band with rivets
+  for (let x = 0; x < TS; x++) { p.set(x, 6, '#2a2a30'); p.set(x, 7, x % 5 === 2 ? '#8a8a99' : '#3c3c46'); }
+  if (variant === 1) { p.set(7, 9, '#2a2a30'); p.set(8, 9, '#2a2a30'); p.set(6, 10, '#8a8a99'); p.set(9, 10, '#8a8a99'); p.set(7, 11, '#8a8a99'); p.set(8, 11, '#8a8a99'); }
+  return p;
+}
+
 /** Iron portcullis of the Heart (sealed while the Guardian fights). */
 function texGate(cols, variant) {
   const p = new Pix(TS, TS);
@@ -451,6 +471,7 @@ function buildTileTextures() {
   base(T.ARENA, 3, (s, v) => texArena(s, C('ARENA'), v === 2));
   base(T.BEAM, 2, (s) => texBeam(s, C('BEAM')));
   base(T.GATE, 2, (s, v) => texGate(C('GATE'), v));
+  base(T.TRAPDOOR, 3, (s, v) => texTrapdoor(s, C('TRAPDOOR'), v));
   // ores on top of their base rock
   for (const def of TILES) {
     if (!def.ore) continue;

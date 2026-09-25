@@ -302,6 +302,7 @@ Détails, tableaux et APIs : `NOTES-core.md`, section « Economy & meta loop ».
   Pioche : tiers 0/1/2/2/3/3 (la 1ʳᵉ amélioration débloque les briques), dégâts d'attaque 10 + 4 × niveau.
   Coûts équilibrés par `tools/economy.mjs` (1ʳᵉ amélioration après une courte descente, dureté 1 vers la 3ᵉ,
   dureté 2 vers la 10ᵉ, dureté 3 vers la 20ᵉ, Gardien atteignable vers 2 h de jeu) ; un test unitaire vérifie ces cibles.
+  (Coûts et cibles révisés au §14 quater.)
 - **Reliques** : 11 (les 7 prévues + Lanterne spectrale, Frénésie, Avarice, Cœur de troll), rareté commune /
   peu commune / rare, tirage pondéré par couche (plus profond = plus rare), jamais de doublon. Coffres « or » :
   16 × (1 + d/25) pièces ; un coffre à relique donne de l'or si toutes sont possédées. Un coup de pioche ouvre aussi un coffre.
@@ -310,3 +311,35 @@ Détails, tableaux et APIs : `NOTES-core.md`, section « Economy & meta loop ».
 - **Menus** : le titre affiche « Continuer » (reprend l'expédition en mémoire, ou en commence une avec l'or banqué
   affiché) et « Réglages » (son, secousses, effacer la sauvegarde avec confirmation ; les réglages survivent à
   l'effacement). Navigation clavier : flèches / ZQSD, Entrée / Espace, Échap ; E ferme la Forge.
+
+## 14 quater. Notes d'implémentation (audit final : WebKit, performances, premier joueur, économie)
+
+Détails, mesures et APIs : `NOTES-core.md`, section « Final audit round ». Écarts au contrat :
+- **Rendu (§9)** : le canvas d'affichage n'est plus en pixels device. Il contient l'image interne (W × H) et le CSS
+  l'agrandit ×s (`image-rendering: pixelated`) ; `?canvasscale` rétablit l'ancien agrandissement dans le canvas.
+  Un bloc cassé redessine seulement ses 3 × 3 cases dans les chunks en cache (`World.dirtyLog`), un anneau d'un chunk
+  autour de la vue est préparé à l'avance ; libellés du HUD mis en cache ; éclairage allégé.
+- **Camp (§2, §3)** : une **trappe** en planches (`trapdoor`, 1 coup de pioche) couvre le puits ; un coup l'ouvre en
+  entier, elle se referme quand le héros est revenu sur le sol du camp, à l'écart du puits. **Le sol du camp (ligne de
+  surface, colonnes 15-56 hors trappe) et la poutre du chevalement sont indestructibles** (`World.locked`, toast
+  « Impossible ici ») : la Forge, le point de départ et l'ancrage du camp restent toujours utilisables.
+- **Grappin (§5)** : « Re-appui Grappin = lâcher » devient : accroché, un appui **hisse** le héros (saut avec l'élan de
+  Saut, puis le crochet repart au sommet du saut) quand il est au sol, sur une corde courte (≤ 40 px), en tenant haut
+  ou presque immobile ; pendant un vrai balancier, l'appui lâche comme avant. **Aide au rebord** : en l'air, poussant
+  vers un mur dont le haut est au plus 10 px au-dessus des pieds, le héros s'y hisse.
+- **Premiers pas** (nouveau `tips.js`) : astuces contextuelles, une seule fois chacune (mémorisées dans `save.tips`),
+  désactivables (Réglages → Astuces) ; panneau « Commandes » (Pause et Réglages) ; ligne de commandes tactiles et conseil
+  d'installation (« Partager → Sur l'écran d'accueil ») sur l'écran titre.
+- **Coincé** : sous le camp, sans progrès vers le haut pendant 45 s malgré des sauts / grappins, le menu Pause propose la
+  **Corde de secours** : retour au camp vivant, le butin non banqué reste au fond (Bourse de secours appliquée), reliques
+  et mine conservées, pas de mort (`stats.rescues`). Pas pendant le combat du Gardien.
+- **Sauvegarde (§7)** : champs `tips`, `settings.tips`, `stats.rescues` (migration automatique) ; Réglages →
+  **Transférer** : code texte `GOUFFRE1:…` pour passer la progression entre Safari et l'app de l'écran d'accueil.
+- **Économie** : coffres « or » 7 × (1 + d/30) pièces (un coffre ≈ une minute de minage : régénérer la mine pour les
+  rouvrir ne rapporte plus 3-4× le minage) ; Abysse plus riche (24 filons de rubis de 3-5 et 15 de mithril de 2-4, rubis
+  dans la croûte des lacs de lave ; **rubis 36, mithril 60** au lieu de 30 / 50) ; 1ᵉʳ niveau Sac 10 et Lanterne 8 ;
+  coûts du milieu et de la fin ×1,4 environ (Pioche 45 / 300 / 1150 / 2500 / 5400). Mesure avec un bot de jeu légal
+  (12 mines) : dureté 1 vers la 3ᵉ expédition, dureté 2 vers la 12ᵉ, dureté 3 vers la 32ᵉ, **Gardien prêt vers 1 h 50,
+  vaincu vers 2 h 10** ; `tools/economy.mjs` est recalé sur ces mesures et son test vérifie ces cibles.
+- **Overlays** : ils défilent quand un panneau dépasse l'écran (encoche + indicateur d'accueil), le titre n'est jamais coupé.
+- **PWA (§11)** : `sw.js` (`gouffre-v5`) ne supprime et ne lit que ses propres caches (`gouffre-*`).

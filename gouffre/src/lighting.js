@@ -13,6 +13,16 @@ import { SOLID, EMIT, TILES } from './tiles.js';
 
 const DIAG = Math.SQRT2;
 const DEFAULT_COLOR = [255, 170, 90];
+// glow splat weights over a 7×7 block (radius 3), computed once: the per-frame
+// Math.hypot calls (≈ 6 700 per frame near lava) were the top lighting hotspot
+const SPLAT_R = 3;
+const SPLAT_N = SPLAT_R * 2 + 1;
+const KERNEL = new Float32Array(SPLAT_N * SPLAT_N);
+for (let dj = -SPLAT_R; dj <= SPLAT_R; dj++) {
+  for (let di = -SPLAT_R; di <= SPLAT_R; di++) {
+    KERNEL[(dj + SPLAT_R) * SPLAT_N + di + SPLAT_R] = Math.max(0, 1 - Math.sqrt(di * di + dj * dj) / (SPLAT_R + 0.5)) * 0.32;
+  }
+}
 
 export class Lighting {
   constructor(game) {
@@ -28,6 +38,10 @@ export class Lighting {
     this.dynamicCount = 0;
     this.statics = [];   // persistent world lights (camp props)
     this.flicker = 1;
+    // cells touched by glow splats this frame (the additive pass only draws that box)
+    this.gx0 = 0; this.gy0 = 0; this.gx1 = -1; this.gy1 = -1;
+    this._tint = null;   // pre-rendered warm lantern tint for the current radius
+    this._tintR = -1;
   }
 
   _ensure(w, h) {
@@ -112,6 +126,7 @@ export class Lighting {
     const { L, Lp, solid, gr, gg, gb, queue } = this;
     const n = w * h;
     L.fill(0, 0, n); Lp.fill(0, 0, n); gr.fill(0, 0, n); gg.fill(0, 0, n); gb.fill(0, 0, n);
+    this.gx0 = w; this.gy0 = h; this.gx1 = -1; this.gy1 = -1;
     let q = 0;
     const qCap = queue.length;
     const push = (i) => { if (q < qCap) queue[q++] = i; };
@@ -159,8 +174,8 @@ export class Lighting {
         if (i < 0 || j < 0 || i >= w || j >= h) continue;
         const k = j * w + i;
         if (solid[k] && (di || dj)) continue;
-        const d = Math.hypot(i + 0.5 - lx, j + 0.5 - ly);
-        const v = 1 - d * fall;
+        const ddx = i + 0.5 - lx, ddy = j + 0.5 - ly;
+        const v = 1 - Math.sqrt(ddx * ddx + ddy * ddy) * fall;
         if (v > Lp[k]) { Lp[k] = v; push(k); }
       }
       this._flood(Lp, q, fall);
@@ -199,19 +214,41 @@ export class Lighting {
   /** Accumulate coloured glow around a source (no occlusion; subtle tint only). */
   _splat(i, j, e, c) {
     const { w, h, gr, gg, gb } = this;
-    const R = 3;
-    for (let dj = -R; dj <= R; dj++) {
-      const y = j + dj;
-      if (y < 0 || y >= h) continue;
-      for (let di = -R; di <= R; di++) {
-        const x = i + di;
-        if (x < 0 || x >= w) continue;
-        const f = e * Math.max(0, 1 - Math.hypot(di, dj) / (R + 0.5)) * 0.32;
+    const R = SPLAT_R;
+    const y0 = Math.max(0, j - R), y1 = Math.min(h - 1, j + R);
+    const x0 = Math.max(0, i - R), x1 = Math.min(w - 1, i + R);
+    if (x1 < x0 || y1 < y0) return;
+    const cr = c[0] * e, cg = c[1] * e, cb = c[2] * e;
+    for (let y = y0; y <= y1; y++) {
+      const krow = (y - j + R) * SPLAT_N + R - i;
+      const row = y * w;
+      for (let x = x0; x <= x1; x++) {
+        const f = KERNEL[krow + x];
         if (f <= 0) continue;
-        const k = y * w + x;
-        gr[k] += c[0] * f; gg[k] += c[1] * f; gb[k] += c[2] * f;
+        const k = row + x;
+        gr[k] += cr * f; gg[k] += cg * f; gb[k] += cb * f;
       }
     }
+    if (x0 < this.gx0) this.gx0 = x0;
+    if (x1 > this.gx1) this.gx1 = x1;
+    if (y0 < this.gy0) this.gy0 = y0;
+    if (y1 > this.gy1) this.gy1 = y1;
+  }
+
+  /** Warm radial lantern tint, rendered once per radius (was a new gradient every frame). */
+  _lanternTint(r) {
+    const R = Math.max(1, Math.round(r));
+    if (this._tint && this._tintR === R) return this._tint;
+    const c = document.createElement('canvas');
+    c.width = c.height = R * 2;
+    const g = c.getContext('2d');
+    const grd = g.createRadialGradient(R, R, 0, R, R, R);
+    grd.addColorStop(0, 'rgba(255,190,110,0.16)');
+    grd.addColorStop(1, 'rgba(255,150,70,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, R * 2, R * 2);
+    this._tint = c; this._tintR = R;
+    return c;
   }
 
   draw(ctx, camX, camY) {
@@ -221,23 +258,27 @@ export class Lighting {
     ctx.save();
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(this.dark, 0, 0, this.w, this.h, x, y, W, H);
-    // coloured bloom from emissive tiles on top of the darkness
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = LIGHT.glowAlpha;
-    ctx.drawImage(this.glow, 0, 0, this.w, this.h, x, y, W, H);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1;
+    // coloured bloom from emissive tiles on top of the darkness: only the box the splats
+    // touched (+1 cell so the smoothed edge fades out on zeros); nothing to add = no pass
+    if (this.gx1 >= this.gx0) {
+      const bx0 = Math.max(0, this.gx0 - 1), by0 = Math.max(0, this.gy0 - 1);
+      const bx1 = Math.min(this.w - 1, this.gx1 + 1), by1 = Math.min(this.h - 1, this.gy1 + 1);
+      const bw = bx1 - bx0 + 1, bh = by1 - by0 + 1;
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = LIGHT.glowAlpha;
+      ctx.drawImage(this.glow, bx0, by0, bw, bh, x + bx0 * TILE, y + by0 * TILE, bw * TILE, bh * TILE);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+    }
     // warm lantern tint around the player
     const p = this.game.player;
     if (!p.dead) {
       const px = p.x + p.w / 2 - camX, py = p.y + 8 - camY;
       const r = p.stats.lanternRadius * TILE * 0.75;
-      const grd = ctx.createRadialGradient(px, py, 0, px, py, r);
-      grd.addColorStop(0, 'rgba(255,190,110,0.16)');
-      grd.addColorStop(1, 'rgba(255,150,70,0)');
+      const tint = this._lanternTint(r);
+      const R = tint.width / 2;
       ctx.globalCompositeOperation = 'lighter';
-      ctx.fillStyle = grd;
-      ctx.fillRect(px - r, py - r, r * 2, r * 2);
+      ctx.drawImage(tint, Math.round(px - R), Math.round(py - R));
     }
     ctx.restore();
     ctx.imageSmoothingEnabled = false;

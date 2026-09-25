@@ -4,6 +4,8 @@ import { TILES, TILE_ID, SOLID, tileDef } from './tiles.js';
 
 const BEDROCK = TILE_ID.BEDROCK;
 const AIR = TILE_ID.AIR;
+/** Changed-tile ring buffer size (the renderer redraws only those cells of its cached chunks). */
+export const DIRTY_LOG = 512;
 
 // Decorations that need a solid neighbour to exist (see worldgen placeDecorations):
 // 1 = hangs from the tile above, 2 = stands on the tile below, 3 = clings to above/left/right.
@@ -27,10 +29,21 @@ export class World {
     this.skyTop = new Int16Array(w);         // first solid row of each column
     this.version = 0;                        // bumps on every tile change
     this.damageVersion = 0;                  // bumps when crack overlays change
+    // every markDirty() also appends the tile index here (ring of DIRTY_LOG entries,
+    // dirtyCount = total ever written): the renderer patches just those cells of its
+    // cached chunks instead of redrawing whole 16x16 chunks
+    this.dirtyLog = new Int32Array(DIRTY_LOG);
+    this.dirtyCount = 0;
+    // 1 = cannot be mined (camp ground, headframe beam): damageTile() answers tooHard + locked
+    this.locked = new Uint8Array(w * h);
   }
 
   idx(tx, ty) { return ty * this.w + tx; }
   inBounds(tx, ty) { return tx >= 0 && ty >= 0 && tx < this.w && ty < this.h; }
+
+  /** Make a tile unmineable (camp ground, headframe beam). */
+  lock(tx, ty, on = true) { if (this.inBounds(tx, ty)) this.locked[ty * this.w + tx] = on ? 1 : 0; }
+  isLocked(tx, ty) { return this.inBounds(tx, ty) && this.locked[ty * this.w + tx] === 1; }
 
   /** Tile id at (tx, ty); out of bounds reads as bedrock. */
   get(tx, ty) {
@@ -80,6 +93,8 @@ export class World {
    */
   markDirty(tx, ty) {
     this.version++;
+    this.dirtyLog[this.dirtyCount % DIRTY_LOG] = ty * this.w + tx;
+    this.dirtyCount++;
     const cx = Math.floor(tx / CHUNK), cy = Math.floor(ty / CHUNK);
     this._bumpChunk(cx, cy);
     const lx = tx - cx * CHUNK, ly = ty - cy * CHUNK;
@@ -112,17 +127,19 @@ export class World {
 
   /**
    * Apply mining damage.
-   * @returns {{hit:boolean, broken:boolean, tooHard:boolean, tileId:number, ratio:number}}
-   *   hit: a damageable solid tile was struck; ratio: damage / hp after the hit.
+   * @returns {{hit:boolean, broken:boolean, tooHard:boolean, locked:boolean, tileId:number, ratio:number}}
+   *   hit: a damageable solid tile was struck; ratio: damage / hp after the hit;
+   *   locked: tooHard because the tile is locked (camp ground), whatever the pickaxe.
    */
   damageTile(tx, ty, dmg, tier) {
-    const res = { hit: false, broken: false, tooHard: false, tileId: AIR, ratio: 0 };
+    const res = { hit: false, broken: false, tooHard: false, locked: false, tileId: AIR, ratio: 0 };
     if (!this.inBounds(tx, ty)) { res.tooHard = true; res.tileId = BEDROCK; return res; }
     const i = ty * this.w + tx;
     const id = this.types[i];
     const def = TILES[id];
     res.tileId = id;
     if (!def || !def.solid) return res;
+    if (this.locked[i]) { res.tooHard = true; res.locked = true; return res; }
     if (def.hp === Infinity || tier < def.tier) { res.tooHard = true; return res; }
     res.hit = true;
     const wasZero = this.damage[i] <= 0;

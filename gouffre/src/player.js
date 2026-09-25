@@ -3,7 +3,7 @@
 // jump buffer, ceiling corner correction). Rope physics live in grapple.js.
 import { PLAYER, GRAPPLE, TILE, SURFACE_Y, HIT_STOP } from './config.js';
 import { moveAndCollide } from './physics.js';
-import { TILES } from './tiles.js';
+import { TILES, TILE_ID } from './tiles.js';
 import { Grapple } from './grapple.js';
 
 function approach(v, target, step) {
@@ -221,6 +221,7 @@ export class Player {
     } else this.regenAcc = 0;
 
     this._holeAssist(dt, moveX);
+    this._ledgeAssist(moveX);
     this._hazards();
 
     // pickaxe: press strikes immediately (a tap during the cooldown is buffered),
@@ -266,6 +267,31 @@ export class Player {
     const step = PLAYER.holeAssistSpeed * dt;
     const dx = Math.max(-step, Math.min(step, targetX - this.x));
     if (!world.rectSolid(this.x + dx, this.y, this.w, this.h)) this.x += dx;
+  }
+
+  /**
+   * Ledge assist: airborne, pushing into a wall whose top edge is at most
+   * PLAYER.ledgeAssist px above the feet (and not rising fast) -> pop up onto it. The
+   * last hop of a climb out of a shaft, or a jump that falls a few pixels short of a
+   * step, then lands instead of sliding back down.
+   */
+  _ledgeAssist(moveX) {
+    if (this.onGround || moveX === 0 || this.grapple.attached || this.vy < -60) return;
+    const world = this.game.world;
+    const dir = moveX > 0 ? 1 : -1;
+    const col = dir > 0 ? Math.floor((this.x + this.w + 0.5) / TILE) : Math.floor((this.x - 0.5) / TILE);
+    const feetRow = Math.floor((this.feetY - 0.01) / TILE);
+    if (!world.isSolid(col, feetRow) || world.isSolid(col, feetRow - 1)) return; // no wall, or no ledge top
+    const top = feetRow * TILE;
+    const rise = this.feetY - top;
+    if (rise <= 0 || rise > PLAYER.ledgeAssist) return;
+    // room for the body lifted in place and standing on the ledge
+    const ny = top - this.h - 0.01;
+    if (world.rectSolid(this.x, ny, this.w, this.h)) return;
+    if (world.rectSolid(this.x + dir * (this.w - 1), ny, this.w, this.h)) return;
+    this.y = ny;
+    this.vy = Math.min(this.vy, -60);
+    this.vx = dir * Math.max(Math.abs(this.vx), 50);
   }
 
   _hazards() {
@@ -361,13 +387,13 @@ export class Player {
 
     // then tiles
     const t = this.strikeTiles(dir);
-    let tooHard = false, hitAny = false, broke = false, hardId = 0;
+    let tooHard = false, hitAny = false, broke = false, hardId = 0, locked = false;
     for (let i = 0; i < t.length; i += 2) {
       const tx = t[i], ty = t[i + 1];
       if (!world.isSolid(tx, ty)) continue;
       const r = world.damageTile(tx, ty, st.pickDamage, st.pickTier);
       const cx = tx * TILE + TILE / 2, cy = ty * TILE + TILE / 2;
-      if (r.tooHard) { tooHard = true; hardId = r.tileId; continue; }
+      if (r.tooHard) { tooHard = true; hardId = r.tileId; locked = locked || r.locked; continue; }
       if (!r.hit) continue;
       hitAny = true;
       if (r.broken) {
@@ -390,7 +416,10 @@ export class Player {
       g.audio.play('clink');
       g.camera.shake(1, 0.06);
       if (this.tooHardCd <= 0) {
-        g.toast('Trop dur !', { color: '#ffb35c', sub: TILES[hardId].name + ' — pioche insuffisante' });
+        if (locked) {
+          // camp ground / headframe: never minable, whatever the pickaxe
+          g.toast('Impossible ici', { color: '#ffb35c', sub: hardId === TILE_ID.BEAM ? 'La poutre du chevalement tient bon' : 'Le sol du camp est bâti : creuse dans la trappe du puits' });
+        } else g.toast('Trop dur !', { color: '#ffb35c', sub: TILES[hardId].name + ' — pioche insuffisante' });
         this.tooHardCd = 0.9;
       }
     }

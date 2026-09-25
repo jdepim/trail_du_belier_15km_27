@@ -1,4 +1,4 @@
-// Debug flags (?debug, ?god, ?seed=, ?depth=, ?gold=, ?bank=, ?autostart, ?mute) and the
+// Debug flags (?debug, ?god, ?seed=, ?depth=, ?gold=, ?bank=, ?autostart, ?mute, ?canvasscale) and the
 // window.__gouffre handle used by the end-to-end tests.
 import { TILE, SURFACE_Y, FIXED_DT, ENEMY_SPAWN_RULES } from './config.js';
 import { TILES, TILE_ID, SOLID } from './tiles.js';
@@ -17,6 +17,7 @@ export function parseFlags(search) {
     autostart: has('autostart'),
     mute: has('mute'),
     nosw: has('nosw') || has('debug'),
+    canvasScale: has('canvasscale'), // fallback present path: upscale in a device-pixel canvas (render.js)
   };
 }
 

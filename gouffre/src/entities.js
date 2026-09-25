@@ -267,6 +267,7 @@ export class EntityManager {
       g.audio.play('pickup', { pitch: 0.85 + Math.min(0.6, p.value / 80) });
       g.particles.spawn('glint', x, y, { color: p.color });
       this.popup(def.name, x, pl.y - 4, p.color);
+      if (g.onOrePickup) g.onOrePickup(p.ore);
       if (run.bagCount >= pl.stats.bagCapacity) { this.fullToastT = 0; this._toastFull(); }
     }
   }
