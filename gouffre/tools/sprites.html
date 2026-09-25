@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>Gouffre — planche de sprites</title>
+<style>body{background:#1a1622;color:#ccc;font:12px monospace;margin:8px}canvas{image-rendering:pixelated}</style></head>
+<body><canvas id="c"></canvas>
+<script type="module">
+import { loadSprites, spriteNames, getSprite, getTileTexture, tileVariantCount, getBackTexture, getCrack, getLavaFrame, backdrop } from '../src/sprites.js';
+import { TILES, BACK_COUNT } from '../src/tiles.js';
+loadSprites();
+const Z = Number(new URLSearchParams(location.search).get('z') || 4);
+const only = new URLSearchParams(location.search).get('only');
+const c = document.getElementById('c');
+c.width = 1400; c.height = 2400;
+const g = c.getContext('2d');
+g.imageSmoothingEnabled = false;
+g.fillStyle = '#1a1622'; g.fillRect(0, 0, c.width, c.height);
+let x = 8, y = 8, rowH = 0;
+function place(w, h, label, draw) {
+  if (x + w * Z > c.width - 8) { x = 8; y += rowH + 18; rowH = 0; }
+  g.fillStyle = '#2a2436'; g.fillRect(x, y, w * Z, h * Z);
+  draw(x, y);
+  g.fillStyle = '#aaa'; g.fillText(label, x, y + h * Z + 11);
+  x += w * Z + 10; rowH = Math.max(rowH, h * Z);
+}
+const names = spriteNames().filter((n) => !only || n.startsWith(only));
+for (const n of names) {
+  const s = getSprite(n);
+  for (let f = 0; f < s.frames; f++) place(s.w, s.h, f === 0 ? n : '', (px, py) => g.drawImage(s.canvas, f * s.w, 0, s.w, s.h, px, py, s.w * Z, s.h * Z));
+}
+if (!only) {
+  x = 8; y += rowH + 24; rowH = 0;
+  for (const t of TILES) {
+    const n = tileVariantCount(t.id);
+    for (let v = 0; v < n; v++) place(16, 16, v === 0 ? t.key : '', (px, py) => g.drawImage(getTileTexture(t.id, v), px, py, 16 * Z, 16 * Z));
+  }
+  for (let b = 1; b < BACK_COUNT; b++) for (let v = 0; v < 3; v++) place(16, 16, v === 0 ? 'back' + b : '', (px, py) => g.drawImage(getBackTexture(b, v), px, py, 16 * Z, 16 * Z));
+  for (let s = 1; s <= 3; s++) place(16, 16, 'crack' + s, (px, py) => { g.drawImage(getTileTexture(5, 0), px, py, 16 * Z, 16 * Z); g.drawImage(getCrack(s), px, py, 16 * Z, 16 * Z); });
+  for (let f = 0; f < 8; f += 2) place(16, 16, 'lava' + f, (px, py) => g.drawImage(getLavaFrame(f, true), px, py, 16 * Z, 16 * Z));
+  x = 8; y += rowH + 24; rowH = 0;
+  for (const k of ['mountains', 'castle', 'hills', 'moon']) { const cv = backdrop[k]; place(cv.width / 2, cv.height / 2, k, (px, py) => g.drawImage(cv, px, py, cv.width * Z / 2, cv.height * Z / 2)); }
+}
+document.title = 'ready';
+</script></body></html>

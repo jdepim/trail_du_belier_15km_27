@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gouffre">
+<meta name="theme-color" content="#05030a">
+<meta name="format-detection" content="telephone=no">
+<meta name="description" content="Gouffre — rogue-lite de minage gothique en pixel art.">
+<title>Gouffre</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #05030a; overflow: hidden; }
+  body {
+    position: fixed; inset: 0;
+    touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+    overscroll-behavior: none; -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%;
+    font-family: "Palatino", "Palatino Linotype", "Book Antiqua", "Baskerville", Georgia, serif;
+    color: #f2e6c8;
+  }
+  /* the canvas holds the small internal image; CSS scales it ×N with nearest-neighbour (render.js) */
+  #game { position: fixed; left: 0; top: 0; display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+  #touch { position: fixed; inset: 0; z-index: 2; }
+  #controls { position: fixed; inset: 0; z-index: 3; pointer-events: none; display: none; }
+  #ui { position: fixed; inset: 0; z-index: 5; pointer-events: none; }
+  #ui > .ov { pointer-events: auto; }
+  *, *::before, *::after { box-sizing: border-box; }
+
+  /* ---- touch controls (visual only; hit-testing happens in input.js) */
+  .tbtn {
+    position: absolute; left: 0; top: 0; border-radius: 50%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(circle at 50% 32%, rgba(74, 52, 90, 0.55), rgba(14, 9, 22, 0.6) 70%);
+    border: 2px solid rgba(214, 188, 130, 0.5);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), inset 0 0 14px rgba(0, 0, 0, 0.55), 0 3px 8px rgba(0, 0, 0, 0.35);
+    color: #f2e6c8; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase;
+    transition: transform 0.06s ease-out, background 0.06s;
+  }
+  .tbtn span { margin-top: 1px; opacity: 0.8; text-shadow: 0 1px 0 #000; }
+  .tbtn .tbtn-icon { filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.8)); }
+  .tbtn.down {
+    transform: scale(0.9);
+    background: radial-gradient(circle at 50% 32%, rgba(170, 120, 70, 0.7), rgba(60, 20, 30, 0.7) 70%);
+    border-color: #ffe6a0;
+  }
+  .tbtn-pause { border-radius: 12px; }
+  .tbtn-pause span { display: none; }
+  .tbtn-ctx {
+    width: 92px; height: 44px; border-radius: 22px; font-size: 13px; letter-spacing: 0.14em;
+    background: linear-gradient(rgba(122, 26, 42, 0.85), rgba(58, 10, 20, 0.85));
+    border-color: #d4a45a; animation: ctxpulse 1.4s ease-in-out infinite;
+  }
+  @keyframes ctxpulse { 50% { box-shadow: 0 0 0 1px #000, 0 0 16px rgba(255, 190, 90, 0.55); } }
+  .stick-base, .stick-ghost {
+    position: absolute; left: 0; top: 0; width: 88px; height: 88px; border-radius: 50%;
+    border: 2px solid rgba(214, 188, 130, 0.45);
+    background: radial-gradient(circle, rgba(20, 12, 30, 0.2), rgba(20, 12, 30, 0.45));
+  }
+  .stick-ghost { opacity: 0.35; }
+  .stick-ghost::after, .stick-knob {
+    content: ""; position: absolute; left: 22px; top: 22px; width: 40px; height: 40px; border-radius: 50%;
+    background: radial-gradient(circle at 40% 35%, rgba(244, 226, 180, 0.8), rgba(150, 118, 78, 0.6));
+    border: 2px solid rgba(0, 0, 0, 0.45);
+  }
+
+  /* ---- DOM overlays (gothic) */
+  /* overlays scroll when their panel is taller than the screen (notched iPhones leave
+     ~321 px in Safari); auto margins centre the panel without ever clipping its top */
+  .ov {
+    position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: flex-start;
+    overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .ov > * { margin: auto; flex-shrink: 0; }
+  .ov-title { background: radial-gradient(ellipse at 50% 45%, rgba(5, 3, 10, 0) 0%, rgba(5, 3, 10, 0.35) 55%, rgba(5, 3, 10, 0.85) 100%); }
+  .ov-dim { background: rgba(5, 3, 10, 0.72); }
+  .ov-red { background: radial-gradient(ellipse at center, rgba(70, 6, 18, 0.65), rgba(5, 3, 10, 0.92)); }
+  .title-box { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 8px 12px 4vh; }
+  .pixel-logo { image-rendering: pixelated; filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.7)); }
+  .tagline { font-style: italic; letter-spacing: 0.18em; color: #d8c49a; font-size: 15px; text-shadow: 0 2px 0 #000, 0 0 12px #000; margin-bottom: 8px; }
+  .panel {
+    min-width: 270px; max-width: 80vw; padding: 18px 28px 22px;
+    background: linear-gradient(#1e1326, #0d0812);
+    border: 2px solid #6a5238;
+    box-shadow: 0 0 0 2px #0a0610, 0 0 0 4px #3a2a1a, 0 14px 40px rgba(0, 0, 0, 0.7);
+    text-align: center; display: flex; flex-direction: column; gap: 10px; align-items: stretch;
+  }
+  .panel h2 { margin: 0 0 4px; font-weight: normal; letter-spacing: 0.3em; text-transform: uppercase; color: #e8c878; font-size: 22px; text-shadow: 0 2px 0 #3a0610; }
+  .panel p { margin: 0 0 6px; color: #c8bca8; font-size: 15px; }
+  .gbtn {
+    font: inherit; font-size: 17px; letter-spacing: 0.14em; text-transform: uppercase; color: #f2e6c8;
+    background: linear-gradient(#3a2438, #1c1022); border: 2px solid #8a6a44; padding: 10px 26px; min-width: 190px;
+    box-shadow: inset 0 1px 0 rgba(255, 220, 160, 0.2), 0 3px 0 #07040a; cursor: pointer; outline: none;
+  }
+  .gbtn.primary { background: linear-gradient(#8a1e30, #3a0a14); border-color: #d4a45a; }
+  .gbtn:active, .gbtn:focus-visible { transform: translateY(2px); box-shadow: 0 1px 0 #07040a; border-color: #ffe6a0; }
+  .small { font-size: 12px; color: #a89ab8; letter-spacing: 0.08em; text-shadow: 0 1px 0 #000; }
+  @media (hover: none) and (pointer: coarse) { .keys { display: none; } }
+  .keys-touch, .install { max-width: min(92vw, 620px); line-height: 1.35; }
+  .install { color: #e8c878; font-style: italic; }
+  .gbtn.rescue { background: linear-gradient(#5a4212, #2a1c06); border-color: #e8c878; }
+  .panel .row.two { flex-wrap: nowrap; gap: 10px; margin-top: 0; }
+  .panel .row.two > .gbtn { flex: 1 1 0; min-width: 0; padding-left: 10px; padding-right: 10px; }
+  .set-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .set-grid .gbtn { min-width: 0; padding-left: 10px; padding-right: 10px; }
+  .panel.settings { min-width: min(92vw, 520px); }
+  .controls { gap: 6px; padding-top: 10px; }
+  .ctl-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .ctl-head h2 { margin: 0; }
+  .controls .ctl-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 8px; text-align: left; }
+  .controls .ctl-col { background: rgba(5, 3, 10, 0.55); border: 1px solid #3a2a1a; padding: 5px 8px; min-width: 0; }
+  .controls h3 { margin: 0 0 3px; font-weight: normal; font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: #e8c878; }
+  .ctl-row { margin-bottom: 3px; font-size: 13px; line-height: 1.22; }
+  .ctl-row .ck { color: #f2e6c8; } .ctl-row .cv { color: #a89ab8; }
+  .controls .small { margin: 0; }
+  textarea.code {
+    width: 100%; font: 12px/1.3 ui-monospace, Menlo, monospace; color: #e8d6b0; background: #0a060e; border: 1px solid #6a5238;
+    padding: 6px; resize: none; user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; touch-action: auto; word-break: break-all;
+  }
+  .gbtn { touch-action: manipulation; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 46px; }
+  .gbtn .sub { display: block; margin-top: 2px; font-size: 11px; letter-spacing: 0.06em; text-transform: none; color: #e8d6b0; opacity: 0.85; }
+  .gbtn.minor { font-size: 14px; min-height: 44px; padding: 7px 20px; background: linear-gradient(#281a2c, #140c18); border-color: #6a5238; }
+  .gbtn.danger { background: linear-gradient(#4a0a14, #22040a); border-color: #b3122e; color: #ffd0d8; }
+  .gbtn:disabled { opacity: 0.45; cursor: default; }
+  .gbtn.arming { transition: opacity 0.2s ease-in 0.35s; } /* destructive confirm: enabled after a beat */
+  .panel h2.red { color: #ff7a8a; text-shadow: 0 2px 0 #3a0610, 0 0 18px rgba(179, 18, 46, 0.6); }
+  .panel .row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 4px; }
+  .panel .row .gbtn { min-width: 170px; }
+  .panel .row.confirm { flex-direction: column; align-items: stretch; flex-wrap: nowrap; } /* Annuler above the red button */
+  .panel .notice { color: #ffb35c; font-size: 13px; }
+  .panel .msg { margin: 0; min-height: 1em; color: #bfe3a0; font-size: 13px; }
+  .panel.wide { max-width: min(94vw, 760px); width: 100%; }
+  .ui-notice {
+    position: absolute; top: calc(env(safe-area-inset-top) + 10px); left: 50%; transform: translateX(-50%); z-index: 6;
+    background: #2a0a12; border: 2px solid #b3122e; color: #ffd0d8; padding: 8px 16px; font-size: 14px; pointer-events: none;
+    width: max-content; max-width: calc(100vw - 32px); text-align: center;
+  }
+  canvas.pix { image-rendering: pixelated; display: block; flex: none; }
+
+  /* ---- death / victory */
+  .death .lead, .victory .lead { color: #e8d6c0; font-size: 16px; margin: 0; }
+  .death .cols { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; text-align: left; }
+  .death .col { background: rgba(5, 3, 10, 0.55); border: 1px solid #3a2a1a; padding: 8px 10px; min-width: 0; }
+  .death h3 { margin: 0 0 6px; font-weight: normal; font-size: 12px; letter-spacing: 0.24em; text-transform: uppercase; color: #a89ab8; }
+  .death .lost h3 { color: #ff8a9a; } .death .kept h3 { color: #bfe3a0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chips.center { justify-content: center; }
+  .chips.relics { margin-top: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; background: #150c14; border: 1px solid #4a3a2a; padding: 2px 7px 2px 4px; font-size: 13px; color: #d8cdb0; }
+  .chip.gold { color: #ffe08a; } .chip.relic { color: #e8c878; border-color: #6a5238; }
+  .death .lost .chip { text-decoration: line-through; text-decoration-color: rgba(224, 48, 78, 0.7); }
+  .death .none { color: #8a7a8a; font-size: 13px; font-style: italic; }
+  .death .k { margin: 0 0 4px; font-size: 14px; color: #c8bca8; display: flex; align-items: center; gap: 6px; }
+  .death .k.dim { color: #7a6a7a; font-size: 12px; } .death .k.big { color: #ffe08a; font-size: 17px; margin-top: 6px; }
+  .statline { font-size: 13px; color: #a89ab8; letter-spacing: 0.04em; }
+  .ov-gold { background: radial-gradient(ellipse at 50% 35%, rgba(90, 60, 10, 0.55), rgba(5, 3, 10, 0.94)); }
+  .victory { border-color: #d4a45a; box-shadow: 0 0 0 2px #0a0610, 0 0 0 4px #6a4a1a, 0 0 60px rgba(232, 200, 120, 0.25); align-items: center; }
+  .vstats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 14px; width: 100%; }
+  .vs { display: flex; flex-direction: column; background: rgba(5, 3, 10, 0.55); border: 1px solid #4a3a1a; padding: 5px 8px; }
+  .vk { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #a89ab8; }
+  .vv { font-size: 18px; color: #ffe08a; }
+
+  /* ---- the Forge */
+  .ov-forge { background: radial-gradient(ellipse at 50% 20%, rgba(90, 30, 10, 0.78), rgba(5, 3, 10, 0.95) 70%); align-items: stretch; overflow: hidden; }
+  .ov-forge > .forge { margin: 0 auto; flex-shrink: 1; } /* the Forge fits the screen; its grid scrolls on its own */
+  .forge { width: 100%; max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; justify-content: center; padding: 8px 12px 6px; min-height: 0; }
+  .forge-head { display: flex; align-items: center; gap: 12px; padding: 0 2px 6px; border-bottom: 2px solid #3a2a1a; }
+  .forge-title { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+  .forge-title h2 { margin: 0; font-weight: normal; letter-spacing: 0.3em; text-transform: uppercase; color: #e8c878; font-size: 22px; text-shadow: 0 2px 0 #3a0610, 0 0 14px rgba(255, 140, 50, 0.45); white-space: nowrap; }
+  .gold-pill { position: relative; display: flex; align-items: center; gap: 7px; font-size: 20px; color: #ffe08a; background: #150c14; border: 2px solid #6a5238; padding: 3px 12px; min-height: 40px; }
+  .gold-pill .spent { position: absolute; right: 8px; top: 100%; color: #ff8a6a; font-size: 16px; animation: spent 0.9s ease-out forwards; pointer-events: none; }
+  @keyframes spent { from { transform: translateY(0); opacity: 1; } to { transform: translateY(14px); opacity: 0; } }
+  .gbtn.close { min-width: 0; padding: 6px 18px; font-size: 15px; min-height: 44px; }
+  .forge-grid {
+    flex: 0 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; overscroll-behavior: contain;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 7px 1px; align-content: start;
+  }
+  .card { display: grid; grid-template-columns: 46px 1fr auto; align-items: center; gap: 9px; min-height: 64px; padding: 5px 7px;
+    background: linear-gradient(#20142a, #110a17); border: 2px solid #4a3a2a; box-shadow: inset 0 1px 0 rgba(255, 220, 160, 0.08); }
+  .card.maxed { border-color: #6a5238; background: linear-gradient(#2a2010, #140c08); }
+  .card.flash { animation: cardflash 0.7s ease-out; }
+  @keyframes cardflash { 0% { box-shadow: 0 0 0 2px #fff0a0, 0 0 26px #e8a848; background: #5a3a10; } 100% { box-shadow: none; } }
+  .card .ic { width: 46px; height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; background: #0a060e; border: 1px solid #3a2a1a; }
+  .card .mid { min-width: 0; }
+  .card .mid { line-height: 1.22; }
+  .card .nm { display: flex; align-items: center; }
+  .card .nm-t { font-size: 14px; color: #e8c878; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pips { display: flex; gap: 3px; }
+  .pip { width: 5px; height: 5px; transform: rotate(45deg); background: #24141c; border: 1px solid #6a5238; }
+  .pip.on { background: #e8c878; border-color: #fff0a0; box-shadow: 0 0 4px rgba(255, 220, 120, 0.6); }
+  .pip.new { animation: pip 0.6s ease-out; }
+  @keyframes pip { 0% { transform: rotate(45deg) scale(2.2); background: #ffffff; } 100% { transform: rotate(45deg) scale(1); } }
+  .card .ds { display: none; font-size: 12px; color: #8a7e96; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (min-height: 520px) { .card .ds { display: block; } .card { min-height: 74px; } }
+  .card .fx { font-size: 13px; color: #b8aa98; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* next level: up to two lines, so the rock a new pickaxe tier unlocks is always readable */
+  .card .nx { font-size: 13px; color: #bfe3a0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+  .card.maxed .nx { color: #e8c878; font-style: italic; }
+  .buy {
+    font: inherit; min-width: 92px; min-height: 50px; padding: 3px 8px; cursor: pointer; outline: none; touch-action: manipulation;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    color: #ffe08a; background: linear-gradient(#6a4210, #2e1a06); border: 2px solid #d4a45a;
+    box-shadow: inset 0 1px 0 rgba(255, 230, 160, 0.3), 0 3px 0 #07040a;
+  }
+  .buy .b1 { display: flex; align-items: center; gap: 4px; font-size: 16px; }
+  .buy .b2 { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #f2e6c8; opacity: 0.8; }
+  .buy:disabled { cursor: default; color: #7a6a5a; background: #150c10; border-color: #3a2a1a; box-shadow: none; }
+  .buy:disabled .b2 { color: #8a6a6a; }
+  .buy:active:not(:disabled), .buy:focus-visible { transform: translateY(2px); box-shadow: 0 1px 0 #07040a; border-color: #ffe6a0; }
+  .card.maxed .buy .b1 { color: #e8c878; letter-spacing: 0.2em; }
+  .forge-foot { font-size: 12px; color: #a89ab8; text-align: center; padding-top: 4px; min-height: 18px; letter-spacing: 0.03em; }
+  .forge-foot.ok { color: #bfe3a0; }
+  @media (max-height: 420px) {
+    .panel { padding: 12px 22px 14px; gap: 8px; }
+    .panel h2 { font-size: 19px; margin-bottom: 0; }
+    .panel p { margin-bottom: 2px; }
+    .gbtn { padding: 5px 22px; min-height: 44px; font-size: 16px; } /* 44 px: iOS minimum touch target */
+    .gbtn.minor { min-height: 44px; padding: 4px 18px; font-size: 13px; }
+    .death .lead, .victory .lead { font-size: 14px; }
+    .vs { padding: 3px 8px; } .vv { font-size: 16px; }
+    .card { min-height: 56px; padding: 3px 7px; } .buy { min-height: 46px; }
+    .card .fx, .card .nx { font-size: 12px; } .card .nm-t { font-size: 13px; }
+    .forge-title h2 { font-size: 18px; } .gold-pill { font-size: 18px; min-height: 38px; }
+    .death .relics.many .chip.relic .rn { display: none; } /* 5+ relics: icons only (the HUD shows the same icons) */
+    .death .relics.many .chip.relic { padding: 2px 4px; }
+    .ctl-row { margin-bottom: 1px; font-size: 12px; line-height: 1.18; }
+  }
+  @media (max-height: 360px) {
+    /* iPhone Safari with its bars (342 / 331 px): tighter Forge spacing so a two-line
+       "next level" (pickaxe unlock) still fits without scrolling */
+    .forge { padding: 3px 12px 2px; }
+    .forge-head { padding-bottom: 3px; }
+    .forge-grid { gap: 5px; padding: 5px 1px; }
+    .card { min-height: 52px; padding: 2px 7px; }
+    .card .mid { line-height: 1.14; }
+    .forge-foot { padding-top: 1px; min-height: 15px; font-size: 11px; }
+  }
+  @media (max-width: 560px) { .forge-grid { grid-template-columns: 1fr; } }
+
+  #rotate {
+    display: none; position: fixed; inset: 0; z-index: 10; background: #05030a; color: #e8c878;
+    align-items: center; justify-content: center; flex-direction: column; gap: 22px;
+    font-size: 20px; letter-spacing: 0.12em; text-align: center;
+  }
+  #rotate .phone { width: 40px; height: 70px; border: 3px solid #e8c878; border-radius: 8px; animation: rot 2s ease-in-out infinite; }
+  @keyframes rot { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+  @media (orientation: portrait) and (hover: none) and (pointer: coarse) { #rotate { display: flex; } }
+  #safe-probe {
+    position: fixed; inset: 0; visibility: hidden; pointer-events: none;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+</style>
+</head>
+<body>
+  <canvas id="game" aria-label="Gouffre"></canvas>
+  <div id="touch"></div>
+  <div id="controls"></div>
+  <div id="ui"></div>
+  <div id="rotate"><div class="phone"></div><div>Tourne ton iPhone</div><div style="font-size:13px;color:#a89ab8">Gouffre se joue en paysage</div></div>
+  <div id="safe-probe"></div>
+  <noscript>Gouffre nécessite JavaScript.</noscript>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
