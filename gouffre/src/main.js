@@ -69,8 +69,18 @@ function onDecoDetached(tx, ty, id) {
 
 // ------------------------------------------------------------------ meta hooks (step 2b)
 
-/** Write the save now (banking, purchase, death, victory, settings). */
-game.persist = () => saveGame(game.save);
+/**
+ * Write the save now (banking, purchase, death, victory, settings). The first failure
+ * (storage blocked or full) tells the player once that progress will not be kept.
+ */
+game.persist = () => {
+  const ok = saveGame(game.save);
+  if (!ok && !game.storageWarned) {
+    game.storageWarned = true;
+    if (game.ui) game.ui.notice('Stockage indisponible : la progression ne sera pas conservée.', 7);
+  }
+  return ok;
+};
 
 /** Recompute player stats: base -> Forge upgrades -> run relics (a bigger max HP also heals the gain). */
 game.refreshStats = () => {
@@ -101,12 +111,16 @@ game.buy = (key) => {
   return r;
 };
 
-/** Banking: back in the camp zone, the backpack + run gold become banked gold. */
-game.bank = () => {
+/**
+ * Banking: back in the camp zone, the backpack + run gold become banked gold.
+ * newTrip = false for loot that arrives while the player is still in the camp after a
+ * bank (magnetised coins still flying): same trip, and the tally on screen adds it up.
+ */
+game.bank = (newTrip = true) => {
   const run = game.run, p = game.player;
-  const s = bankLoot(game.save, run, p.stats);
+  const s = bankLoot(game.save, run, p.stats, { newTrip });
   game.persist();
-  game.hud.tally(s); // counts up with coin ticks, then the "cha-ching" (audio 'bank')
+  game.hud.tally(s); // counts up with coin ticks, then the "cha-ching" (audio 'bank'); merges into a tally on screen
   game.audio.play('coin', { pitch: 1.2 });
   game.particles.spawn('glint', p.cx, p.y - 4, { color: '#ffe08a' });
   game.particles.spawn('spark', p.cx, p.y, { count: 10 });
@@ -134,10 +148,20 @@ game.onPlayerDeath = (cause) => {
   game.deathT = ECONOMY.deathDelay;
 };
 
+/**
+ * Pause request (pause button / Échap, app hidden, portrait). During the death animation
+ * the run is already settled: go straight to the death summary instead of a pause menu.
+ */
+game.requestPause = () => {
+  if (game.state !== 'PLAYING') return;
+  if (game.player.dead || game.deathT > 0) { game.deathT = -1; game.setState('DEAD'); return; }
+  game.setState('PAUSED');
+};
+
 /** Pause menu "Recommencer l'expédition": abandon = a death (loot lost, insurance applies). */
 game.abandonRun = () => {
   const run = game.run, p = game.player;
-  if (!run || run.over) return;
+  if (!run || run.over) { if (game.deathInfo && game.state === 'PAUSED') game.setState('DEAD'); return; }
   game.deathInfo = settleDeath(game.save, run, p.stats, { depth: p.depth, cause: 'abandon' });
   closeRun();
   game.persist();
@@ -146,7 +170,9 @@ game.abandonRun = () => {
 
 /** Hook: the Guardian's death sequence has finished (enemies.js). Victory screen after a short beat. */
 game.onBossDefeated = () => {
-  if (game.run) game.run.bossDefeated = true;
+  // a death during the Guardian's last breath wins: no banner, no victory
+  if (!game.run || game.run.over || game.player.dead) return;
+  game.run.bossDefeated = true;
   game.hud.banner('VICTOIRE !', 'Le Gardien de l’Abysse est vaincu');
   game.toast('LE CŒUR EST LIBÉRÉ', { color: '#ffe08a', sub: 'Son trésor est à toi', life: 3 });
   game.victoryT = ECONOMY.victoryDelay;
@@ -227,6 +253,8 @@ game.setState = (s) => {
     case 'PAUSED':
       ui.showPause({
         run: game.run, player: game.player,
+        // no abandon once settled, nor while the beaten Guardian dies (the victory is due)
+        canAbandon: !!game.run && !game.run.over && !game.run.bossDefeated && !game.enemies.truce,
         onResume: () => game.setState('PLAYING'),
         onAbandon: () => game.abandonRun(),
         onTitle: () => game.toTitle(),
@@ -370,7 +398,7 @@ function ambientEffects(dt) {
 function updatePlaying(dt) {
   const g = game;
   g.time += dt;
-  if (g.input.pressed('pause')) { g.setState('PAUSED'); return; }
+  if (g.input.pressed('pause')) { g.requestPause(); return; }
   // dynamic lights are rebuilt every tick (any system may addLight during it)
   // and persist across render frames without a tick, hit-stop and pause
   g.lighting.clearDynamic();
@@ -406,8 +434,12 @@ function updatePlaying(dt) {
     if (nearForge) { g.setState('SHOP'); return; }
     if (inter.use) inter.use();
   }
-  // banking: back in the camp zone (feet at or above the surface) with loot
-  if (!p.dead && !run.over && p.feetY <= g.gen.camp.bankY && (run.bagCount > 0 || run.gold > 0)) g.bank();
+  // banking: back in the camp zone (feet at or above the surface) with loot. Loot that
+  // lands while the player is still in the camp (coins in flight) joins the same trip.
+  const inCamp = !p.dead && !run.over && p.feetY <= g.gen.camp.bankY;
+  if (!inCamp) run.awayFromCamp = true;
+  else if (run.bagCount > 0 || run.gold > 0) { g.bank(run.awayFromCamp === true); run.awayFromCamp = false; }
+  campRest(inCamp, dt);
 
   if (g.victoryT > 0) {
     g.victoryT -= dt;
@@ -417,6 +449,27 @@ function updatePlaying(dt) {
     g.deathT -= dt;
     if (g.deathT <= 0) g.setState('DEAD');
   }
+}
+
+/** Resting in the camp restores HP quickly (surviving a trip must beat dying for a heal). */
+function campRest(inCamp, dt) {
+  const g = game, p = g.player;
+  if (!inCamp || p.hp >= p.stats.maxHp) {
+    if (!inCamp) g.campResting = false;
+    g.campHealAcc = 0;
+    return;
+  }
+  if (!g.campResting) {
+    g.campResting = true;
+    g.toast('REPOS AU CAMP', { color: '#bfe3a0', sub: 'La chaleur de la forge referme tes plaies' });
+  }
+  g.campHealAcc = (g.campHealAcc || 0) + p.stats.maxHp * ECONOMY.campHealRate * dt;
+  if (g.campHealAcc < 1) return;
+  const n = Math.floor(g.campHealAcc);
+  g.campHealAcc -= n;
+  p.heal(n);
+  if (Math.random() < 0.25) g.particles.spawn('glint', p.cx - 4 + Math.random() * 8, p.y + Math.random() * 10, { color: '#ffd0dc' });
+  if (p.hp >= p.stats.maxHp) { g.audio.play('heal', {}); g.particles.spawn('blood', p.cx, p.cy, { count: 5, color: '#ff7a95' }); }
 }
 
 /** One fixed tick. Hit-stop freezes gameplay but keeps input edges latched. */
@@ -438,6 +491,7 @@ function frame(now) {
   last = now;
   if (dt > 0) game.fps += (1 / dt - game.fps) * 0.05;
   game.input.poll();
+  if (game.state === 'PLAYING') { game.input.navX = 0; game.input.navY = 0; game.input.padBackEdge = false; } // menu-only pad edges
   if (!game.frozen) {
     if (game.state === 'PLAYING') {
       acc += dt;
@@ -450,9 +504,11 @@ function frame(now) {
       // presses confirm the focused button or go back
       const inp = game.input;
       inp.beginTick();
-      if (inp.pressed('pause')) game.ui.back();
+      if (inp.navX || inp.navY) game.ui.move(inp.navX, inp.navY); // pad stick / D-pad
+      if (inp.pressed('pause') || inp.takePadBack()) game.ui.back();
       else if (inp.pressed('jump') || inp.pressed('interact')) game.ui.activate();
       inp.endTick();
+      inp.navX = 0; inp.navY = 0;
       if (game.state === 'TITLE') { ambientEffects(dt); game.particles.update(dt); game.player._updateAnim(dt); }
     }
   }
@@ -483,7 +539,7 @@ function resize() {
   game.input.setSafeArea(css);
   if (game.ui) game.ui.relayout();
   if (game.world) game.camera.snap();
-  if (isPortrait() && game.input.touchEnabled && game.state === 'PLAYING') game.setState('PAUSED');
+  if (isPortrait() && game.input.touchEnabled && game.state === 'PLAYING') game.requestPause();
 }
 
 let resizeQueued = false;
@@ -536,7 +592,7 @@ function boot() {
   if (window.visualViewport) window.visualViewport.addEventListener('resize', queueResize);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      if (game.state === 'PLAYING') game.setState('PAUSED');
+      if (game.state === 'PLAYING') game.requestPause();
       game.persist();
       game.audio.suspend();
     } else {
@@ -554,6 +610,10 @@ function boot() {
   game.newWorld(flags.seed ?? randomSeed());
   game.setState('TITLE');
   if (game.saveStatus === 'corrupt') game.ui.notice('Sauvegarde illisible : une nouvelle a été créée.');
+  else if (game.saveStatus === 'unavailable' || !storageAvailable()) {
+    game.storageWarned = true;
+    game.ui.notice('Stockage indisponible : la progression ne sera pas conservée.', 7);
+  }
   if (flags.autostart) game.startGame();
   requestAnimationFrame(frame);
   document.documentElement.classList.add('ready');

@@ -442,7 +442,14 @@ test('Guardian: death sequence, drops, gates reopen and game.onBossDefeated fire
   game.flags.god = true;
   enterArena(game, a);
   run(game, BOSS.intro + 0.2);
-  en.hurt(b, b.maxHp * 0.5, null, {});
+  // phase gating: a huge blow stops at the next threshold, one phase at a time
+  en.hurt(b, b.maxHp * 0.9, null, {});
+  assert.equal(b.phase, 1);
+  assert.equal(b.hp, Math.floor(b.maxHp * BOSS.phase2), 'clamped to the 66 % threshold');
+  run(game, BOSS.phaseTime + 0.1);
+  en.hurt(b, b.hp + 10, null, {});
+  assert.equal(b.phase, 2);
+  assert.equal(b.hp, Math.floor(b.maxHp * BOSS.phase3), 'clamped to the 33 % threshold');
   run(game, BOSS.phaseTime + 0.1);
   en.hurt(b, b.hp + 10, null, {});
   assert.equal(b.state, 'dying');
@@ -458,4 +465,140 @@ test('Guardian: death sequence, drops, gates reopen and game.onBossDefeated fire
   assert.equal(en.list.filter((m) => m.minion && m.alive).length, 0, 'minions vanish');
   run(game, 3);
   assert.equal(game.defeated, 1, 'fires once');
+});
+
+// ------------------------------------------------------------------ Guardian review fixes
+
+/** Arena fight already past the intro roar, the player standing 7 tiles left of the Guardian. */
+function awakeBoss(seed = 12345) {
+  const ctx = arenaGame(seed);
+  enterArena(ctx.game, ctx.a, 20);
+  run(ctx.game, BOSS.intro + 0.2);
+  return ctx;
+}
+
+/** Hold the player still at (cx, feetY) for n seconds (enemy AI runs; no gravity for the player). */
+function hold(game, cx, feetY, seconds, each) {
+  const p = game.player;
+  for (let i = 0; i < Math.round(seconds / DT); i++) {
+    p.x = cx - p.w / 2; p.y = feetY - p.h; p.vx = 0; p.vy = 0;
+    run(game, DT);
+    if (each && each() === false) break;
+  }
+}
+
+test('Guardian: its box covers the sprite up to the head (hitbox, contact, strikes)', () => {
+  assert.ok(ENEMY_STATS.guardian.h >= 54, 'hitbox up to the head of the 62 px sprite');
+  const { game } = awakeBoss();
+  const b = game.enemies.boss;
+  assert.equal(b.y + b.h, (game.gen.arena.y1 + 1) * TILE, 'feet on the arena floor');
+  // a strike at head height (the top 12 px of the body) now lands
+  b.state = 'walk';
+  assert.equal(game.enemies.damageInBox({ x: b.x, y: b.y, w: b.w, h: 12 }, 20, b.x - 10, {}), 1);
+});
+
+test('Guardian: a player hanging beside its head is clawed, swiped and knocked off the rope', () => {
+  const { game } = awakeBoss();
+  const b = game.enemies.boss, p = game.player;
+  p.hp = p.stats.maxHp = 5000; // survive the whole sequence
+  const states = new Set();
+  let knocked = 0;
+  const cx = () => b.x + b.w / 2 + 30; // beside the head, well inside the claw / swipe reach
+  hold(game, cx(), b.y + 4, 14, () => {
+    states.add(b.state);
+    if (p.grapple.state !== 'attached') { if (p.grapple.state === 'retracting') knocked++; p.grapple.state = 'attached'; }
+  });
+  assert.ok(states.has('claw_wind'), 'the rising claw answers a player above its shoulders');
+  assert.ok(p.hp < 5000, 'the hanging player takes damage');
+  assert.ok(knocked > 0, 'a Guardian blow knocks the player off the rope');
+  // on the arena floor far away: no claw
+  const d = arenaGame().game;
+  enterArena(d, d.gen.arena, 20);
+  run(d, BOSS.intro + 0.2);
+  const b2 = d.enemies.boss, seen = new Set();
+  d.flags.god = true;
+  hold(d, b2.x + b2.w / 2 + 40, (d.gen.arena.y1 + 1) * TILE, 10, () => { seen.add(b2.state); });
+  assert.ok(!seen.has('claw_wind'), 'no rising claw against a player standing on the floor');
+});
+
+test('Guardian: the swipe reaches the head height, the fists reach beside the body', () => {
+  const { game } = awakeBoss();
+  const b = game.enemies.boss, p = game.player, en = game.enemies;
+  const ex = b.x + b.w / 2;
+  p.hp = p.stats.maxHp = 1000;
+  // swipe: player at head height in front of it
+  b.facing = 1; p.iframes = 0;
+  p.x = ex + 20; p.y = b.y - 6;
+  en._set(b, 'swipe'); en._guardian(b, DT);
+  assert.ok(p.hp < 1000, 'swipe hits a player at head height');
+  // fists: player beside the body, feet level with its chest
+  const hp0 = p.hp; p.iframes = 0;
+  p.x = ex + 18; p.y = b.y + 20 - p.h;
+  en._slam(b);
+  assert.ok(p.hp < hp0, 'the slam fists hit a player beside the body');
+});
+
+test('Guardian: each phase opens with its signature attack; a charge can be jumped', () => {
+  const { game } = awakeBoss();
+  const b = game.enemies.boss, en = game.enemies, p = game.player;
+  game.flags.god = true;
+  const floor = (game.gen.arena.y1 + 1) * TILE;
+  en.hurt(b, Math.ceil(b.maxHp * 0.35), null, {});
+  assert.equal(b.phase, 1);
+  const winds = [];
+  hold(game, b.x + b.w / 2 + 120, floor, BOSS.phaseTime + 3, () => { if (b.state.endsWith('_wind') && winds[winds.length - 1] !== b.state) winds.push(b.state); });
+  assert.equal(winds[0], 'summon_wind', 'phase 2 opens with a summon');
+  run(game, 1.5);
+  en.hurt(b, b.maxHp, null, {});
+  assert.equal(b.phase, 2);
+  winds.length = 0;
+  hold(game, b.x + b.w / 2 + 120, floor, BOSS.phaseTime + 6, () => { if (b.state.endsWith('_wind') && winds[winds.length - 1] !== b.state) winds.push(b.state); });
+  assert.deepEqual(winds.slice(0, 2), ['rain_wind', 'charge_wind'], 'phase 3 opens with the fire rain, then a charge');
+  // the charging Guardian runs head down: a player at jump height clears it
+  game.flags.god = false;
+  en._set(b, 'charge');
+  p.hp = p.stats.maxHp; p.iframes = 0;
+  p.x = b.x + 4; p.y = floor - 44 - p.h;         // feet 44 px above the floor, over its head line
+  en._contact(b);
+  assert.equal(p.hp, p.stats.maxHp, 'jumped over the charge');
+  p.y = floor - p.h - 10;
+  en._contact(b);
+  assert.ok(p.hp < p.stats.maxHp, 'but a player on the floor is run over');
+});
+
+test('Guardian: once it is beaten its minions and projectiles vanish and nothing hurts the player', () => {
+  const { game } = awakeBoss();
+  const b = game.enemies.boss, en = game.enemies, p = game.player;
+  b.phase = 2;
+  en._summon(b);
+  const minions = en.list.filter((m) => m.minion && m.alive);
+  assert.ok(minions.length >= 2);
+  en.fire('bone', p.cx + 30, p.cy, -60, 0, 10);
+  en.fire('fireball', p.cx - 30, p.cy, 60, 0, 10);
+  en._fireRain(b);
+  en.kill(b);
+  assert.equal(b.state, 'dying');
+  assert.equal(en.truce, true);
+  assert.equal(en.projectiles.filter((q) => q.active).length, 0, 'every projectile (bones included) is gone');
+  assert.ok(minions.every((m) => m.dying > 0 || !m.alive), 'minions die at once');
+  // a minion spawned by anything during the death sequence cannot hurt either
+  const bat = en.spawn('bat', p.cx, p.cy, { anchor: 'air', state: 'fly' });
+  p.hp = p.stats.maxHp - 20;
+  const hp0 = p.hp;
+  p.iframes = 0;
+  run(game, 1);
+  assert.equal(p.hp, hp0, 'truce: no contact damage while the Guardian dies');
+  assert.ok(bat);
+  p.hp = p.stats.maxHp; // full HP: the treasure's hearts wait on the floor
+  run(game, BOSS.deathTime);
+  assert.equal(game.defeated, 1);
+  assert.equal(game.entities.pickups.filter((q) => q.active && q.kind === 2).length, 2, 'its two hearts');
+});
+
+test('Guardian: the HP budget makes a real fight (≈ 60 s at the reachable 26-damage pickaxe)', () => {
+  const hp = Math.round(scaleStat(ENEMY_STATS.guardian.hp, 272, 'hp'));
+  const hitsPerSecond = 1 / PLAYER.attackCooldown;
+  const pureStrikeTime = hp / 26 / hitsPerSecond;
+  assert.ok(hp > 2000 && hp < 4000, `~2650 hp (${hp})`);
+  assert.ok(pureStrikeTime > 25 && pureStrikeTime < 60, `${pureStrikeTime.toFixed(0)} s of non-stop strikes`);
 });

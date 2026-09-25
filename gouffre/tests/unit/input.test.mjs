@@ -169,3 +169,52 @@ test('a gamepad that disconnects releases its stick and buttons', () => {
     if (nav) Object.defineProperty(globalThis, 'navigator', nav); else delete globalThis.navigator;
   }
 });
+
+// ------------------------------------------------------------------ gamepad (mocked navigator.getGamepads)
+
+function mockPad() {
+  const pad = { connected: true, axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false })) };
+  const had = Object.getOwnPropertyDescriptor(globalThis.navigator, 'getGamepads');
+  Object.defineProperty(globalThis.navigator, 'getGamepads', { value: () => [pad], configurable: true });
+  const restore = () => { if (had) Object.defineProperty(globalThis.navigator, 'getGamepads', had); else delete globalThis.navigator.getGamepads; };
+  return { pad, restore };
+}
+
+test('gamepad: a button held through a state change (resetAll) must be released before it counts again', () => {
+  const { pad, restore } = mockPad();
+  try {
+    const inp = new Input();
+    pad.buttons[0].pressed = true;                   // A
+    inp.poll();
+    inp.beginTick(); assert.equal(inp.pressed('jump'), true); inp.endTick();
+    inp.resetAll();                                  // e.g. PLAYING -> VICTORY
+    for (let i = 0; i < 3; i++) { inp.poll(); inp.beginTick(); assert.equal(inp.pressed('jump'), false, 'still held: no new press'); inp.endTick(); }
+    pad.buttons[0].pressed = false; inp.poll();
+    pad.buttons[0].pressed = true; inp.poll();
+    inp.beginTick(); assert.equal(inp.pressed('jump'), true, 'a fresh press counts'); inp.endTick();
+    // B (menu back) follows the same rule
+    pad.buttons[1].pressed = true; inp.poll();
+    assert.equal(inp.takePadBack(), true);
+    assert.equal(inp.takePadBack(), false, 'once per press');
+    inp.resetAll(); inp.poll();
+    assert.equal(inp.takePadBack(), false, 'held through the state change');
+  } finally { restore(); }
+});
+
+test('gamepad: stick / D-pad move the menu focus once per push, then auto-repeat', () => {
+  const { pad, restore } = mockPad();
+  try {
+    const inp = new Input();
+    pad.buttons[13].pressed = true;                  // D-pad down
+    inp.poll();
+    assert.deepEqual([inp.navX, inp.navY], [0, 1]);
+    inp.navX = inp.navY = 0;
+    inp.poll();
+    assert.deepEqual([inp.navX, inp.navY], [0, 0], 'no repeat right away');
+    inp._navNext = 0; inp.poll();
+    assert.deepEqual([inp.navX, inp.navY], [0, 1], 'auto-repeat while held');
+    inp.navX = inp.navY = 0;
+    pad.buttons[13].pressed = false; pad.axes[0] = 0.9; inp.poll();
+    assert.deepEqual([inp.navX, inp.navY], [1, 0], 'stick right');
+  } finally { restore(); }
+});

@@ -193,7 +193,8 @@ export const ENEMY_SCALING = { hpPerM: 1 / 60, dmgPerM: 1 / 80, ngPlusMul: 1.5 }
 //   layer 2 (d 40-99)  skeleton 37-58 hp, 11-16 dmg, bones 9-13
 //   layer 3 (d 100-179) spider / ghost 50-80 hp, 16-26 dmg (pick lv2 expected)
 //   layer 4 (d 180-259) imp 80-105 hp, golem 190-255 hp, 22-42 dmg (upgraded player)
-//   the Guardian (d 272): ~830 hp, 22-35 dmg per hit
+//   the Guardian (d 272): ~2650 hp (≈ 60 s of fighting with the 26-damage pickaxe), 22-35 dmg per hit.
+//   Its box (34 × 56) covers the sprite up to the head (only the horn tips stick out).
 export const ENEMY_STATS = {
   slime: { hp: 16, dmg: 5, speed: 68, w: 12, h: 10, gold: 2, kbResist: 0 },
   bat: { hp: 8, dmg: 4, speed: 58, w: 12, h: 9, gold: 2, kbResist: 0 },
@@ -202,7 +203,7 @@ export const ENEMY_STATS = {
   ghost: { hp: 20, dmg: 7, speed: 34, w: 14, h: 18, gold: 6, kbResist: 0 },
   imp: { hp: 20, dmg: 6, speed: 64, w: 12, h: 14, gold: 7, kbResist: 0.1, projDmg: 7 },
   golem: { hp: 48, dmg: 10, speed: 20, w: 22, h: 28, gold: 12, kbResist: 0.85 },
-  guardian: { hp: 150, dmg: 5, speed: 34, w: 34, h: 46, gold: 110, kbResist: 1, projDmg: 6 },
+  guardian: { hp: 480, dmg: 5, speed: 34, w: 34, h: 56, gold: 110, kbResist: 1, projDmg: 6 },
 };
 
 // Behaviour tuning (ranges in px, times in s, speeds in px/s).
@@ -246,6 +247,7 @@ export const DROPS = {
   heartChance: 0.08,
   heartChanceLow: 0.25,     // when the player is below 35 % HP
   heartHeal: 15,
+  minionHeart: 0.3,         // the Guardian's summoned minions drop a heart this often (no coins)
   crystalHeal: 20,          // life crystal heart
   magnetRadius: 56,
   magnetDelay: 0.32,        // s before a fresh drop can be pulled
@@ -276,6 +278,7 @@ export const ECONOMY = {
   vampireHeal: [3, 0.04],   // Vampirisme: heal 3 + 4 % max HP per kill
   victoryDelay: 3.2,        // s between the Guardian's death and the victory screen
   deathDelay: 1.6,          // s of death animation before the summary
+  campHealRate: 0.35,       // resting in the camp heals this fraction of max HP per second
 };
 
 // Le Gardien de l'Abysse (boss, DESIGN §6). Damage values are base values (depth-scaled).
@@ -292,6 +295,13 @@ export const BOSS = {
   swipeRange: 64,
   swipeWindup: 0.5,
   swipeDmgMul: 1.5,
+  swipeReachUp: 12,             // px the claw arc rises above the head (the whole body height is covered)
+  clawAbove: 14,                // a player whose feet are above boss top + this is "above" (rope, platform, pogo)
+  clawRange: 48,                // px (centre to centre): rising claw against a player above / beside the head
+  clawWindup: 0.5,
+  clawReach: 64,                // px above the boss's head the rising claw reaches
+  clawDmgMul: 1.4,
+  chargeDuck: 14,               // px: the charging Guardian runs head down (its contact box is lower: jump it)
   summonWindup: 1.0,
   maxMinions: 4,
   rainWindup: 0.9,
@@ -303,6 +313,10 @@ export const BOSS = {
   chargeDmgMul: 1.6,
   deathTime: 3.0,
   coins: 24,                    // coins dropped on death
+  // each phase opens with its signature attack (after the transition roar): phase 2 summons,
+  // phase 3 rains fire then charges. A hit never carries the boss past a phase threshold.
+  signature: ['', 'summon', 'rain'],
+  cameraMaxCrop: 40,            // px of the arena ceiling the touch framing may crop (floor above the thumbs)
 };
 
 // Spawn placement rules (tile footprint + anchoring) used by worldgen.
@@ -351,7 +365,7 @@ export const WORLDGEN = {
   minSpawnDepth: 9,
   relicChestChance: 0.35,
   // Boss arena (outer box incl. 2-thick walls/ceiling); interior is x0+2..x1-2, y0+2..y1-1
-  arena: { x0: 4, x1: 67, y0: SURFACE_Y + 260, y1: DEEPEST_ROW },
+  arena: { x0: 7, x1: 64, y0: SURFACE_Y + 260, y1: DEEPEST_ROW }, // narrower than the world: the right wall stays left of the thumb buttons
 };
 
 // ---------------------------------------------------------------- misc

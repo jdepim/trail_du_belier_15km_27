@@ -218,7 +218,66 @@ test('death: loot lost except the Bourse de secours share, which is banked', () 
   }
   const run = newRun(); run.bag = { coal: 1 }; run.bagCount = 1; run.bagValue = 1; run.gold = 4;
   clearLoot(run);
-  assert.deepEqual([run.bag, run.bagCount, run.gold], [{}, 0, 0]);
+  assert.deepEqual([run.bag, run.bagCount, run.bagValue, run.gold], [{}, 0, 0, 0], 'the HUD estimate (bagValue) is reset too');
+});
+
+test('banking resets the backpack estimate; late coins join the same trip (no extra trip)', () => {
+  const s = defaultSave();
+  const run = newRun();
+  run.bag = { copper: 8 }; run.bagCount = 8; run.bagValue = 16; run.gold = 40;
+  assert.equal(bankLoot(s, run, {}).total, 56);
+  assert.equal(run.bagValue, 0, 'estimate cleared with the bag');
+  assert.equal(s.stats.trips, 1);
+  // three magnetised coins land a moment later, still in the camp
+  for (let i = 0; i < 3; i++) { run.gold = 3; bankLoot(s, run, {}, { newTrip: false }); }
+  assert.equal(s.stats.trips, 1, 'still one trip');
+  assert.equal(s.stats.bestTrip, 65, 'the trip total includes the late coins');
+  assert.equal(s.gold, 65);
+  // next trip: one coal. The estimate is 1, not 17
+  run.bag = { coal: 1 }; run.bagCount = 1; run.bagValue += 1;
+  assert.equal(run.bagValue, 1);
+  bankLoot(s, run, {});
+  assert.equal(s.stats.trips, 2);
+  assert.equal(s.stats.bestTrip, 65);
+});
+
+test('HUD: a bank while the tally is on screen adds up in the same panel', async () => {
+  const { Hud } = await import('../../src/hud.js');
+  const game = fakeGame(boxWorld(8, 8));
+  game.save = defaultSave();
+  game.enemies = { bossBar: null };
+  const hud = new Hud(game);
+  game.save.gold = 56;
+  hud.tally({ items: [{ key: 'copper', name: 'Cuivre', count: 8, value: 2 }], oreValue: 16, gold: 40, total: 56 });
+  for (let i = 0; i < 30; i++) hud.update(DT);
+  game.save.gold = 59;
+  hud.tally({ items: [], oreValue: 0, gold: 3, total: 3 });
+  assert.equal(hud.tallyData.total, 59, 'merged, not replaced');
+  assert.equal(hud.tallyData.gold, 43);
+  assert.equal(hud.tallyData.items[0].count, 8);
+  for (let i = 0; i < 60 * 5; i++) { hud.update(DT); if (hud.tallyData) assert.ok(hud.tallyShown <= 59); }
+  assert.equal(hud.tallyShown, 59);
+  assert.equal(hud.tallyActive, false);
+});
+
+test('two ore chunks / two hearts collected on the same tick never overfill the bag nor waste a heart', () => {
+  const game = lootGame(boxWorld(30, 12));
+  const p = game.player;
+  standOn(game, 10, 11);
+  const cap = p.stats.bagCapacity;
+  game.run.bag = { coal: cap - 1 }; game.run.bagCount = cap - 1; game.run.bagValue = cap - 1;
+  // a pile of 3 chunks resting right where the player stands
+  for (let i = 0; i < 3; i++) { const c = game.entities.spawnOre(p.cx, p.cy, 'iron'); c.vx = 0; c.vy = 0; c.x = p.x + 2; c.y = p.y + 8; c.t = 1; }
+  runLoot(game, 0.2);
+  assert.equal(game.run.bagCount, cap, 'filled to capacity, not beyond');
+  assert.equal(game.entities.pickups.filter((q) => q.active && q.kind === 3).length, 2, 'the rest waits on the floor');
+  // hearts: 5 HP missing, two hearts arrive together -> one is used, the other waits
+  p.hp = p.stats.maxHp - 5;
+  for (let i = 0; i < 2; i++) { game.entities.spawnHeart(p.cx, p.cy, 15); }
+  for (const q of game.entities.pickups) if (q.active && q.kind === 2) { q.vx = 0; q.vy = 0; q.x = p.x + 2; q.y = p.y + 8; q.t = 1; }
+  runLoot(game, 0.2);
+  assert.equal(p.hp, p.stats.maxHp);
+  assert.equal(game.entities.pickups.filter((q) => q.active && q.kind === 2).length, 1, 'second heart kept for later');
 });
 
 // ------------------------------------------------------------------ backpack

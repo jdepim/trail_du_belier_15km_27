@@ -146,7 +146,7 @@ export class Hud {
     this.hint = null;
     this.flashT = 0; this.flashDur = 1; this.flashColor = '#ffffff';
     this.bossShown = -1; // lagging boss HP (white trail), -1 = no fight
-    this.tallyData = null; this.tallyT = 0; this.tallyShown = 0; this.tallyTick = 0; this.tallyDone = false;
+    this.tallyData = null; this.tallyT = 0; this.tallyShown = 0; this.tallyFrom = 0; this.tallyTick = 0; this.tallyDone = false;
     this.bankShown = 0;  // banked gold as displayed (counts up after a tally)
     this.goldPulse = 0;
     this.txt = {
@@ -195,10 +195,28 @@ export class Hud {
   tally(summary) {
     if (!summary || !(summary.total > 0)) return;
     this.bannerT = Math.min(this.bannerT, 0.3); // the tally takes the stage
-    this.tallyData = summary;
+    const d = this.tallyData;
+    if (d) {
+      // a bank while the panel is still up (coins that landed a moment later): add it to
+      // this trip's tally and count on from the value shown, instead of replacing it
+      for (const it of summary.items) {
+        const same = d.items.find((q) => q.key === it.key);
+        if (same) same.count += it.count; else d.items.push({ ...it });
+      }
+      d.items.sort((a, b) => b.value - a.value);
+      d.gold += summary.gold; d.oreValue += summary.oreValue; d.total += summary.total;
+      this.tallyLabels = d.items.map((i) => '×' + i.count);
+      this.tallyGold = String(d.gold);
+      this.tallyFrom = this.tallyShown;
+      this.tallyT = Math.min(this.tallyT, 0.35); // keep the panel, restart the count-up
+      this.tallyDone = false; this.tallyTick = 0;
+      this.tallyCount = Math.min(1.2, 0.35 + summary.total / 250);
+      return;
+    }
+    this.tallyData = { items: summary.items.map((i) => ({ ...i })), gold: summary.gold, oreValue: summary.oreValue, total: summary.total };
     this.tallyLabels = summary.items.map((i) => '×' + i.count);
     this.tallyGold = String(summary.gold);
-    this.tallyT = 0; this.tallyShown = 0; this.tallyTick = 0; this.tallyDone = false;
+    this.tallyT = 0; this.tallyShown = 0; this.tallyFrom = 0; this.tallyTick = 0; this.tallyDone = false;
     this.tallyCount = Math.min(1.5, 0.45 + summary.total / 250);
   }
 
@@ -227,7 +245,7 @@ export class Hud {
       const t0 = 0.35;
       if (this.tallyT > t0 && !this.tallyDone) {
         const k = Math.min(1, (this.tallyT - t0) / this.tallyCount);
-        this.tallyShown = Math.round(d.total * (1 - (1 - k) * (1 - k)));
+        this.tallyShown = Math.round(this.tallyFrom + (d.total - this.tallyFrom) * (1 - (1 - k) * (1 - k)));
         this.tallyTick -= dt;
         if (this.tallyTick <= 0 && k < 1) { this.tallyTick = 0.07; this.game.audio.play('coin', { pitch: 0.8 + k * 0.6, volume: 0.6 }); }
         if (k >= 1) { this.tallyDone = true; this.tallyShown = d.total; this.game.audio.play('bank', {}); this.goldPulse = 0.6; }
@@ -266,7 +284,7 @@ export class Hud {
     ctx.fillStyle = '#07040c'; ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
     ctx.fillStyle = '#2a0a12'; ctx.fillRect(bx, by, bw, bh);
     const max = p.stats.maxHp;
-    const lagW = Math.round((this.hpShown / max) * bw), hpW = Math.round((p.hp / max) * bw);
+    const lagW = Math.round((Math.min(this.hpShown, max) / max) * bw), hpW = Math.round((Math.min(p.hp, max) / max) * bw);
     ctx.fillStyle = '#f2c0c8'; ctx.fillRect(bx, by, lagW, bh);
     ctx.fillStyle = '#b3122e'; ctx.fillRect(bx, by, hpW, bh);
     ctx.fillStyle = '#e0304e'; ctx.fillRect(bx, by, hpW, 2);
@@ -274,7 +292,8 @@ export class Hud {
     ctx.fillStyle = '#c9a86a';
     ctx.fillRect(bx - 2, by - 2, 2, 1); ctx.fillRect(bx + bw, by - 2, 2, 1); ctx.fillRect(bx - 2, by + bh + 1, 2, 1); ctx.fillRect(bx + bw, by + bh + 1, 2, 1);
     const O = { outline: '#07040c' };
-    drawText(ctx, this.txt.hp.get(Math.ceil(p.hp), max), bx + bw + 5, by - 0.5, '#f2e6c8', O);
+    const hpTw = drawText(ctx, this.txt.hp.get(Math.ceil(p.hp), max), bx + bw + 5, by - 0.5, '#f2e6c8', O);
+    let leftRight = bx + bw + 5 + hpTw; // right edge of the top-left block (the boss bar keeps clear of it)
 
     // --- run gold + backpack (fill gauge + estimated value)
     const run = g.run;
@@ -292,9 +311,11 @@ export class Hud {
     ctx.fillStyle = '#07040c'; ctx.fillRect(gx0 - 1, T + 20, gwid + 2, 3);
     ctx.fillStyle = '#3a2a1a'; ctx.fillRect(gx0, T + 21, gwid, 1);
     ctx.fillStyle = full ? '#ff7a4a' : '#e8c878'; ctx.fillRect(gx0, T + 21, Math.round((Math.min(bagN, cap) / Math.max(1, cap)) * gwid), 1);
+    leftRight = Math.max(leftRight, gx0 + gwid + 1);
     if (bagN > 0) {
       const est = Math.round((run.bagValue || 0) * (p.stats.oreMul || 1));
-      drawText(ctx, this.txt.est.get(est), gx0 + gwid + 5, T + 12, '#bfae84', O);
+      const ew = drawText(ctx, this.txt.est.get(est), gx0 + gwid + 5, T + 12, '#bfae84', O);
+      leftRight = Math.max(leftRight, gx0 + gwid + 5 + ew);
     }
 
     // --- relics (run bonuses)
@@ -343,7 +364,7 @@ export class Hud {
 
     // --- boss bar (top centre)
     const bar = g.enemies ? g.enemies.bossBar : null;
-    if (bar) this.drawBossBar(ctx, W, T, bar);
+    if (bar) this.drawBossBar(ctx, W, T, bar, leftRight);
 
     // --- layer banner
     if (this.bannerT > 0) {
@@ -437,8 +458,9 @@ export class Hud {
   }
 
   /** Boss health bar: name, framed bar with phase notches, damage trail, intro fill. */
-  drawBossBar(ctx, W, T, bar) {
-    const bw = Math.min(170, Math.round(W * 0.38)), bh = 5;
+  drawBossBar(ctx, W, T, bar, leftRight = 0) {
+    // centred, never over the top-left block (gold, backpack estimate): 7 px of frame + 6 px gap
+    const bw = Math.max(60, Math.min(170, Math.round(W * 0.38), Math.floor(W - 2 * (leftRight + 13)))), bh = 5;
     const bx = Math.round(W / 2 - bw / 2), by = T + 11;
     const a = Math.min(1, bar.reveal * 2);
     const prev = ctx.globalAlpha;

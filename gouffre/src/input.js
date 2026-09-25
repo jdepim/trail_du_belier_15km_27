@@ -8,6 +8,8 @@
 //   input.held(a)              : current state
 //   actions: 'jump' 'attack' 'grapple' 'interact' 'pause'
 //   input.inject({ x, y, jump, attack, grapple, interact, pause }) / input.tap(a) / clearInjected()
+//   menus (gamepad): input.navX / navY (stick / D-pad focus moves, with auto-repeat),
+//   input.takePadBack() (B pressed); main.js hands them to ui.move() / ui.back()
 //
 // Edge semantics: DOM events latch presses/releases; beginTick() moves latched edges
 // into the tick-visible set and endTick() clears it. When a frame runs zero fixed
@@ -53,6 +55,13 @@ export class Input {
     this.touchStick = { x: 0, y: 0, active: false };
     this.padStick = { x: 0, y: 0 };
     this.padConnected = false;
+    // after resetAll() (state change) a pad button that is still held must be released
+    // before it counts again: a held A / Start would otherwise re-press at once on the
+    // next poll and confirm the menu that just opened (victory "Continuer (NG+)"...)
+    this.padBlock = {};
+    this.padBackHeld = false; this.padBackBlocked = false; this.padBackEdge = false;
+    this.navX = 0; this.navY = 0;           // pending menu focus move (-1 / 0 / 1)
+    this._navDX = 0; this._navDY = 0; this._navNext = 0;
     this.injectStick = { x: 0, y: 0, active: false };
     this.moveX = 0; this.moveY = 0;
     this.aimX = 0; this.aimY = 0; this.aimActive = false;
@@ -112,6 +121,10 @@ export class Input {
 
   /** Release everything (blur, state change). */
   resetAll() {
+    if (this.padConnected) {
+      for (const a of ACTIONS) this.padBlock[a] = true;
+      this.padBackBlocked = true;
+    }
     for (const s of Object.keys(this.sources)) for (const a of ACTIONS) this._setAction(s, a, false);
     for (const d of DIRS) this.kbDirs[d] = false;
     this.touchStick.active = false; this.touchStick.x = this.touchStick.y = 0;
@@ -220,17 +233,51 @@ export class Input {
     let x = pad.axes[0] || 0, y = pad.axes[1] || 0;
     if (b(14)) x = -1; if (b(15)) x = 1; if (b(12)) y = -1; if (b(13)) y = 1;
     this.padStick.x = x; this.padStick.y = y;
-    this._setAction('pad', 'jump', b(0));
-    this._setAction('pad', 'attack', b(2) || b(7));
-    this._setAction('pad', 'grapple', b(1) || b(5) || b(6));
-    this._setAction('pad', 'interact', b(3));
-    this._setAction('pad', 'pause', b(9));
+    this._padAction('jump', b(0));
+    this._padAction('attack', b(2) || b(7));
+    this._padAction('grapple', b(1) || b(5) || b(6));
+    this._padAction('interact', b(3));
+    this._padAction('pause', b(9));
+    // menu back (B): edge, blocked like the actions while held through a state change
+    const back = b(1);
+    if (this.padBackBlocked) { if (!back) this.padBackBlocked = false; }
+    else if (back && !this.padBackHeld) this.padBackEdge = true;
+    this.padBackHeld = back;
+    this._padNav(x, y);
     this._updateAxes();
   }
+
+  _padAction(a, down) {
+    if (this.padBlock[a]) {
+      if (!down) this.padBlock[a] = false; // released: counts again from the next press
+      down = false;
+    }
+    this._setAction('pad', a, down);
+  }
+
+  /** Stick / D-pad -> menu focus moves: one on push, then auto-repeat while held. */
+  _padNav(x, y) {
+    let dx = 0, dy = 0;
+    if (Math.max(Math.abs(x), Math.abs(y)) > 0.5) {
+      if (Math.abs(x) > Math.abs(y)) dx = x > 0 ? 1 : -1; else dy = y > 0 ? 1 : -1;
+    }
+    const t = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (dx !== this._navDX || dy !== this._navDY) {
+      this._navDX = dx; this._navDY = dy;
+      if (dx || dy) { this.navX = dx; this.navY = dy; this._navNext = t + 380; }
+    } else if ((dx || dy) && t >= this._navNext) {
+      this.navX = dx; this.navY = dy; this._navNext = t + 150;
+    }
+  }
+
+  /** True once per press of the pad's B button (menus: back). */
+  takePadBack() { const v = this.padBackEdge; this.padBackEdge = false; return v; }
 
   _releasePad() {
     this.padConnected = false;
     this.padStick.x = 0; this.padStick.y = 0;
+    this.padBlock = {}; this.padBackHeld = false; this.padBackBlocked = false; this.padBackEdge = false;
+    this._navDX = 0; this._navDY = 0; this.navX = 0; this.navY = 0;
     for (const a of ACTIONS) this._setAction('pad', a, false);
     this._updateAxes();
   }
@@ -310,6 +357,14 @@ export class Input {
   }
 
   setSafeArea(safe) { this.safe = safe; this.layout(); }
+
+  /** CSS px from the bottom of the screen to the top of the Saut / Frapper buttons (0 before layout). */
+  bottomBand() {
+    if (typeof window === 'undefined' || !this.buttons.length) return 0;
+    let top = Infinity;
+    for (const b of this.buttons) if (b.action === 'jump' || b.action === 'attack') top = Math.min(top, b.y - b.r);
+    return top === Infinity ? 0 : Math.max(0, window.innerHeight - top);
+  }
 
   setControlsVisible(v) { this.controlsVisible = v; if (!v) this.resetAll(); this._applyVisibility(); }
 

@@ -148,7 +148,8 @@ export function installDebug(game) {
     /** Stand next to chest i (feet on its floor, 12 px to its left). */
     teleportToChest(i) { const c = game.entities.chests[i]; game.player.teleport(c.x - 12, c.y); game.camera.snap(); return api.chests()[i]; },
     giveRelic(key) { if (!game.run.relics.includes(key)) game.run.relics.push(key); game.refreshStats(); return game.run.relics.slice(); },
-    killBoss() { const b = game.enemies.boss; if (!b) return false; b.state = b.state === 'dormant' || b.state === 'intro' || b.state === 'phase' ? 'walk' : b.state; return game.enemies.hurt(b, b.hp + 1, null, {}); },
+    /** Kill the Guardian now, whatever its phase (hurt() is phase-gated: one blow never skips a phase). */
+    killBoss() { const b = game.enemies.boss; if (!b) return false; b.state = b.state === 'dormant' || b.state === 'intro' || b.state === 'phase' ? 'walk' : b.state; game.enemies.kill(b); return b.state === 'dying'; },
     die(cause = 'enemy') { const p = game.player; p.iframes = 0; const god = game.flags.god; game.flags.god = false; p.takeDamage(99999, null, { cause }); game.flags.god = god; },
     gen() { const g = game.gen; return { seed: g.seed, camp: g.camp, arena: g.arena, spawns: g.spawns.length, chests: g.chests.length }; },
     info() { return { scale: game.renderer.scale, W: game.renderer.W, H: game.renderer.H, fps: game.fps, safe: game.safe, touch: game.input.touchEnabled }; },

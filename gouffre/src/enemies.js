@@ -67,7 +67,7 @@ const GORE = {
 };
 const HIT_PITCH = { slime: 0.8, bat: 1.4, skeleton: 1.2, spider: 1.25, ghost: 1.5, imp: 1.1, golem: 0.6, guardian: 0.5 };
 // windup states (drawn with the red "tele" tint blinking)
-const TELE = { windup: 1, charge: 1, shake: 1, slam_wind: 1, swipe_wind: 1, summon_wind: 1, rain_wind: 1, charge_wind: 1 };
+const TELE = { windup: 1, charge: 1, shake: 1, slam_wind: 1, swipe_wind: 1, claw_wind: 1, summon_wind: 1, rain_wind: 1, charge_wind: 1 };
 
 const CAMP_CEIL = (SURFACE_Y + 2) * TILE; // flyers stay below this line
 const FIRE_LIGHT = [255, 120, 40];
@@ -202,6 +202,7 @@ export class EnemyManager {
     this.boss = null;
     this.bossDefeated = false;
     this.gatesSealed = false;
+    this.truce = false;      // the Guardian is dying: nothing may hurt the player any more
     this.arena = null;
     this.respawnT = 6;
     this.rng = createRng(1);
@@ -232,6 +233,7 @@ export class EnemyManager {
     this.boss = null;
     this.bossDefeated = false;
     this.gatesSealed = false;
+    this.truce = false;
     this.respawnT = SP.interval[0];
     for (const s of this.spawns) {
       const e = this.spawn(s.key, s.x, s.y, { anchor: s.anchor, depth: s.depth });
@@ -268,7 +270,7 @@ export class EnemyManager {
     e.facing = this.rng.chance(0.5) ? 1 : -1;
     e.onGround = false; e.flash = 0; e.stun = 0; e.cd = this.rng.float(0.3, 1.2);
     e.animT = this.rng.float(0, 2); e.stateT = 0; e.losT = 0; e.sees = false; e.alpha = 1;
-    e.phase = 0; e.last = ''; e.boomT = 0; e.aux = 0; e.wander = false; e.revealT = 0;
+    e.phase = 0; e.last = ''; e.forced = ''; e.boomT = 0; e.aux = 0; e.wander = false; e.revealT = 0;
     let state;
     switch (key) {
       case 'bat': state = anchor === 'ceiling' ? 'sleep' : 'fly'; break;
@@ -360,7 +362,7 @@ export class EnemyManager {
   /** Contact damage to the player (i-frames and knockback are handled by player.takeDamage). */
   _contact(e) {
     const p = this.game.player;
-    if (p.dead || e.stun > 0 || e.dying > 0 || !e.alive) return;
+    if (p.dead || this.truce || e.stun > 0 || e.dying > 0 || !e.alive) return;
     let mul = 1;
     switch (e.state) {
       case 'retreat': case 'dormant': case 'intro': case 'phase': case 'dying': return;
@@ -368,7 +370,9 @@ export class EnemyManager {
       default: break;
     }
     const s = AI.contactShrink;
-    if (!overlap(e.x + s, e.y + s, e.w - 2 * s, e.h - 2 * s, p.x, p.y, p.w, p.h)) return;
+    // the charging Guardian runs head down: its contact box is lower, so it can be jumped
+    const duck = e.key === 'guardian' && e.state === 'charge' ? BOSS.chargeDuck : 0;
+    if (!overlap(e.x + s, e.y + s + duck, e.w - 2 * s, e.h - 2 * s - duck, p.x, p.y, p.w, p.h)) return;
     if (p.takeDamage(e.dmg * mul, e.x + e.w / 2, { cause: e.key })) {
       if (e.key === 'bat') { this._set(e, 'flee'); }
       else if (e.key === 'ghost') { this._set(e, 'retreat'); }
@@ -799,11 +803,29 @@ export class EnemyManager {
         if (e.stateT >= BOSS.swipeWindup) { this._set(e, 'swipe'); g.audio.play('swing', { pitch: 0.5 }); g.audio.play('roar', { pitch: 2, volume: 0.4 }); }
         return;
       case 'swipe': {
+        // the claw sweeps the whole body height (and a little above the head) in front of it
         const x0 = e.facing > 0 ? ex : ex - 60;
-        if (!p.dead && overlap(x0, e.y + 8, 60, e.h - 8, p.x, p.y, p.w, p.h)) p.takeDamage(e.dmg * BOSS.swipeDmgMul, ex, { cause: 'guardian' });
+        if (!p.dead && overlap(x0, e.y - BOSS.swipeReachUp, 60, e.h + BOSS.swipeReachUp, p.x, p.y, p.w, p.h)) this._bossHit(e.dmg * BOSS.swipeDmgMul, ex);
         if (e.stateT >= 0.18) { this._set(e, 'recover'); e.aux = 0.55; }
         return;
       }
+      case 'claw_wind':
+        // crouches, then claws upward: the answer to a player hanging on a rope, standing on a
+        // platform or bouncing on its head (in every phase)
+        e.vx = 0;
+        if (Math.abs(dx) > 6) e.facing = dx > 0 ? 1 : -1;
+        if (e.stateT >= BOSS.clawWindup) {
+          this._set(e, 'claw');
+          g.audio.play('swing', { pitch: 0.4 });
+          g.audio.play('roar', { pitch: 1.7, volume: 0.45 });
+          for (let k = -2; k <= 2; k++) g.particles.spawn('spark', ex + k * 14, e.y - 10 - (2 - Math.abs(k)) * 12, { count: 2 });
+        }
+        return;
+      case 'claw':
+        // both claws sweep up over the head: reaches whoever it chose it for (clawRange)
+        if (!p.dead && overlap(ex - BOSS.clawRange + 2, e.y - BOSS.clawReach, 2 * BOSS.clawRange - 4, BOSS.clawReach + e.h * 0.5, p.x, p.y, p.w, p.h)) this._bossHit(e.dmg * BOSS.clawDmgMul, ex);
+        if (e.stateT >= 0.2) { this._set(e, 'recover'); e.aux = 0.6; }
+        return;
       case 'summon_wind':
         e.vx = 0;
         if (Math.floor(e.stateT * 8) !== Math.floor((e.stateT - dt) * 8)) g.particles.spawn('poof', ex, e.y + 6, { count: 3, color: '#8a2ab0' });
@@ -854,14 +876,26 @@ export class EnemyManager {
   _bossChoose(e, dx) {
     const ph = e.phase, g = this.game, p = g.player;
     const adx = Math.abs(dx);
-    let pick;
-    if (adx < BOSS.swipeRange && e.last !== 'swipe') pick = 'swipe';
+    const level = Math.abs(p.feetY - (e.y + e.h)) < 40;      // the player is on the arena floor
+    const above = p.feetY < e.y + BOSS.clawAbove;            // on a rope / platform / its head
+    let pick = '';
+    if (e.forced) {
+      // the phase's signature attack opens it (phase 3: fire rain, then a charge)
+      const f = e.forced;
+      e.forced = f === 'rain' ? 'charge' : '';
+      if (f === 'summon' && this._minions() >= BOSS.maxMinions) pick = '';
+      else if (f === 'charge' && !level) pick = '';
+      else pick = f;
+    }
+    if (pick) { /* forced */ }
+    else if (above && adx < BOSS.clawRange && e.last !== 'claw') pick = 'claw';
+    else if (adx < BOSS.swipeRange && e.last !== 'swipe') pick = 'swipe';
     else {
       // weighted choice without allocation
       const wSlam = e.last === 'slam' ? 0.4 : 1.2;
       const wSummon = ph >= 1 && this._minions() < BOSS.maxMinions && e.last !== 'summon' ? 1 : 0;
       const wRain = ph >= 2 && e.last !== 'rain' ? 1.3 : 0;
-      const wCharge = ph >= 2 && e.last !== 'charge' && Math.abs(p.feetY - (e.y + e.h)) < 40 && adx > 60 ? 1 : 0;
+      const wCharge = ph >= 2 && e.last !== 'charge' && level && adx > 40 ? 1.1 : 0;
       let r = this.rng.next() * (wSlam + wSummon + wRain + wCharge);
       if ((r -= wSlam) < 0) pick = 'slam';
       else if ((r -= wSummon) < 0) pick = 'summon';
@@ -885,8 +919,16 @@ export class EnemyManager {
       g.particles.spawn('dust', ex + s * 22, floorY, { count: 5 });
       this.fire('shock', ex + s * 26, floorY - 7, s * BOSS.shockSpeed, 0, Math.round(e.projDmg * BOSS.shockDmgMul));
     }
-    // the fists themselves
-    if (!p.dead && Math.abs(p.cx - ex) < 40 && p.feetY > floorY - 24) p.takeDamage(e.projDmg * BOSS.shockDmgMul, ex, { cause: 'guardian' });
+    // the fists themselves: they come down from above the head, anything beside the body is hit
+    if (!p.dead && Math.abs(p.cx - ex) < 40 && p.feetY > e.y - 6) this._bossHit(e.projDmg * BOSS.shockDmgMul, ex);
+  }
+
+  /** A Guardian blow landed on the player: damage, and a hit knocks them off their rope. */
+  _bossHit(dmg, fromX) {
+    const p = this.game.player;
+    if (this.truce || !p.takeDamage(dmg, fromX, { cause: 'guardian' })) return false;
+    if (p.grapple && p.grapple.state === 'attached') p.grapple.release(false);
+    return true;
   }
 
   _summon(e) {
@@ -958,13 +1000,18 @@ export class EnemyManager {
       g.entities.spawnHeart(cx - 10, cy, DROPS.heartHeal * 2);
       g.entities.spawnHeart(cx + 10, cy, DROPS.heartHeal * 2);
     }
-    for (let i = 0; i < this.list.length; i++) { const m = this.list[i]; if (m.alive && m.minion && m.dying <= 0) { m.noDrops = true; this.kill(m); } }
-    for (const pr of this.projectiles) if (pr.active && pr.type !== 'bone') this._killProj(pr, true);
+    this._clearBossField();
     e.alive = false;
     this.bossDefeated = true;
     this.setGates(false);
     if (g.run) g.run.kills = (g.run.kills || 0) + 1;
     if (g.onBossDefeated) g.onBossDefeated();
+  }
+
+  /** The Guardian is beaten: its minions vanish (no drops) and every hostile projectile is gone. */
+  _clearBossField() {
+    for (let i = 0; i < this.list.length; i++) { const m = this.list[i]; if (m.alive && m.minion && m.dying <= 0) { m.noDrops = true; this.kill(m); } }
+    for (const pr of this.projectiles) if (pr.active) this._killProj(pr, true);
   }
 
   /** World y the camera centres on during the boss fight (whole arena in view), or null. */
@@ -973,6 +1020,10 @@ export class EnemyManager {
     if (!a || !this.gatesSealed || !b || !b.alive || !this.playerInArena()) return null;
     return ((a.y0 + a.y1 + 2) * TILE) / 2;
   }
+
+  /** Arena floor / interior top (world px) for the fight framing (render.js Camera). */
+  get arenaFloorY() { return this.arena ? (this.arena.y1 + 1) * TILE : 0; }
+  get arenaTopY() { return this.arena ? this.arena.y0 * TILE : 0; }
 
   /** HUD data for the boss bar, or null when no fight is on (object reused). */
   get bossBar() {
@@ -1031,10 +1082,14 @@ export class EnemyManager {
       g.particles.spawn('blood', ex + (fromX === null ? 0 : Math.sign(fromX - ex) * e.w * 0.35), ey - 6, { count: 8, color: GORE.guardian });
       g.particles.spawn('spark', ex, ey - 6, { count: 3 });
       g.audio.play('boss_hit', { pitch: 1 + this.rng.next() * 0.2 });
+      // phase gating: a single blow never carries it past the next threshold
+      const gate = e.phase === 0 ? BOSS.phase2 : e.phase === 1 ? BOSS.phase3 : 0;
+      if (gate > 0) e.hp = Math.max(e.hp, Math.floor(e.maxHp * gate));
       const f = e.hp / e.maxHp;
       if (e.hp <= 0) { this.kill(e); return true; }
       if ((e.phase === 0 && f <= BOSS.phase2) || (e.phase === 1 && f <= BOSS.phase3)) {
         e.phase++;
+        e.forced = BOSS.signature[e.phase] || '';
         this._set(e, 'phase');
         for (const pr of this.projectiles) if (pr.active && pr.type === 'warn') pr.active = false;
         if (g.hud) g.hud.toast(e.phase === 1 ? 'LE GARDIEN APPELLE SES SERVITEURS' : 'LE GARDIEN S’ENRAGE !', { color: '#ff7a95', life: 2 });
@@ -1067,7 +1122,9 @@ export class EnemyManager {
       this._set(e, 'dying');
       e.boomT = 0;
       this._lifeSteal(e);
-      for (const pr of this.projectiles) if (pr.active && (pr.type === 'warn' || pr.type === 'shock')) pr.active = false;
+      // truce: during the 3 s death sequence nothing can hurt the player any more
+      this.truce = true;
+      this._clearBossField();
       g.audio.play('roar', { pitch: 0.7 });
       g.hitStop(0.2);
       return;
@@ -1110,7 +1167,8 @@ export class EnemyManager {
       default: g.particles.spawn('blood', x, y, { count: 12, color: col }); g.particles.spawn('poof', x, y, { count: 8, color: '#3a2840' });
     }
     e.alive = false;
-    if (e.noDrops || e.minion || !g.entities) return;
+    if (e.noDrops || !g.entities) return;
+    if (e.minion) { if (this.rng.next() < DROPS.minionHeart) g.entities.spawnHeart(x, y - 2); return; } // no coins from summons
     g.entities.spawnCoins(x, y, e.gold);
     const p = g.player;
     const chance = p.hp < p.stats.maxHp * 0.35 ? DROPS.heartChanceLow : DROPS.heartChance;
@@ -1183,7 +1241,7 @@ export class EnemyManager {
       } else if (pr.type === 'meteor' && Math.floor(pr.t * 40) !== Math.floor((pr.t - dt) * 40)) {
         g.particles.spawn('ember', pr.x, pr.y - 3, { count: 1, spread: 4 });
       }
-      if (!p.dead && overlap(pr.x - pr.w / 2, pr.y - pr.h / 2, pr.w, pr.h, p.x, p.y, p.w, p.h)) {
+      if (!p.dead && !this.truce && overlap(pr.x - pr.w / 2, pr.y - pr.h / 2, pr.w, pr.h, p.x, p.y, p.w, p.h)) {
         if (p.takeDamage(pr.dmg, pr.x, { cause: pr.type }) && pr.type !== 'shock') this._killProj(pr);
       }
     }
@@ -1262,9 +1320,11 @@ export class EnemyManager {
           case 'phase': return 6;
           case 'slam_wind': return 4;
           case 'slam': return 5;
-          case 'recover': return e.last === 'slam' && e.stateT < 0.35 ? 5 : e.last === 'swipe' && e.stateT < 0.2 ? 9 : 0;
+          case 'recover': return e.last === 'slam' && e.stateT < 0.35 ? 5 : e.last === 'swipe' && e.stateT < 0.2 ? 9 : e.last === 'claw' && e.stateT < 0.2 ? 4 : 0;
           case 'swipe_wind': return 8;
           case 'swipe': return 9;
+          case 'claw_wind': return 5;
+          case 'claw': return 4;
           case 'summon_wind': return 6;
           case 'rain_wind': return 7;
           case 'charge_wind': case 'charge': return 12;

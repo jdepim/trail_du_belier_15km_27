@@ -11,7 +11,8 @@
 //   Stats:
 //     applyUpgrades(player, save, relics?) -> stats (base stats -> upgrades -> relics)
 //   Loot (pure helpers, the game calls them):
-//     bagValue(bag, mul), bankLoot(save, run, stats) -> summary, settleDeath(save, run, stats, info) -> summary
+//     bagValue(bag, mul), bankLoot(save, run, stats, { newTrip }) -> summary, settleDeath(save, run, stats, info) -> summary,
+//     clearLoot(run)
 //
 // Numbers were balanced with `node tools/economy.mjs` (curve documented in NOTES-core.md).
 import { SAVE_KEY, MUTE_KEY, GRAPPLE, PLAYER, ECONOMY } from './config.js';
@@ -338,22 +339,28 @@ function bagItems(bag) {
 export function clearLoot(run) {
   for (const k in run.bag) delete run.bag[k];
   run.bagCount = 0;
+  run.bagValue = 0;
   run.gold = 0;
 }
 
 /**
  * Banking in the camp: the backpack (× stats.oreMul) and the run gold become banked
  * gold. Mutates save + run; returns { items, oreValue, gold, total }. The caller saves.
+ * opts.newTrip (default true): this bank starts a new trip (stats.trips++). Coins that
+ * arrive a moment after the player reached the camp are banked with newTrip = false:
+ * they add to the same trip (run.tripGold, which feeds stats.bestTrip).
  */
-export function bankLoot(save, run, stats = {}) {
+export function bankLoot(save, run, stats = {}, opts = {}) {
   const items = bagItems(run.bag);
   const oreValue = bagValue(run.bag, stats.oreMul || 1);
   const gold = Math.max(0, Math.round(run.gold || 0));
   const total = oreValue + gold;
+  const newTrip = opts.newTrip !== false;
   save.gold += total;
   save.stats.totalGold += total;
-  if (total > 0) save.stats.trips++;
-  save.stats.bestTrip = Math.max(save.stats.bestTrip || 0, total);
+  if (total > 0 && newTrip) save.stats.trips++;
+  run.tripGold = (newTrip ? 0 : run.tripGold || 0) + total;
+  save.stats.bestTrip = Math.max(save.stats.bestTrip || 0, run.tripGold);
   save.stats.bestDepth = Math.max(save.stats.bestDepth, run.bestDepth || 0);
   run.banked = (run.banked || 0) + total;
   run.ore = (run.ore || 0) + (run.bagCount || 0);

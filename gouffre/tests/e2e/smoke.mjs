@@ -640,6 +640,93 @@ try {
     await G(() => { window.__gouffre.clearEnemies(); window.__gouffre.setGod(false); });
   });
 
+  await step('boss (touch): floor framed above the thumb buttons; a rope-hanger is clawed off; its death clears minions, and dying in its last breath is no victory', async () => {
+    const a = (await G(() => window.__gouffre.gen())).arena;
+    const vict0 = (await G(() => window.__gouffre.save())).stats.victories;
+    // backed against the right wall of the arena
+    await G((a) => { const g = window.__gouffre; g.setGod(true); g.clearEnemies(); g.teleport(a.x1, a.y1); }, a);
+    await waitFor(() => G(() => window.__gouffre.boss().gatesSealed), 2500, 30);
+    await settle(1500);
+    const geo = await G(() => {
+      const game = window.__gouffre.game, R = game.renderer, cam = game.camera, p = game.player, lay = game.input.getLayout();
+      const dpr = Math.min(3, window.devicePixelRatio || 1);
+      const css = (v, off) => (v * R.scale + off) / dpr;
+      return {
+        floor: css(game.enemies.arenaFloorY - cam.y, R.offY),
+        band: Math.min(lay.jump.y - lay.jump.r, lay.attack.y - lay.attack.r),
+        heroR: css(p.x + p.w - cam.x, R.offX),
+        atkL: lay.attack.x - lay.attack.r,
+      };
+    });
+    assert.ok(geo.floor < geo.band, `arena floor (${geo.floor.toFixed(0)} CSS px) above the Saut / Frapper buttons (${geo.band})`);
+    assert.ok(geo.heroR < geo.atkL, `hero at the right wall (${geo.heroR.toFixed(0)}) left of Frapper (${geo.atkL})`);
+    await shot('34-boss-right-wall.png');
+    try {
+    // hang on the arena's hanging pillar beside the Guardian's head: it is clawed / swiped off the rope
+    const rope = await G((a) => {
+      const g = window.__gouffre, game = g.game, p = game.player, b = game.enemies.boss;
+      g.freeze(true);
+      game.save.upgrades.grapple = 2; game.refreshStats();
+      g.teleport(a.x0 + 14, a.y1); g.step(2);
+      g.input.set({ x: 0, y: -1 }); g.input.tap('grapple');
+      let n = 0; while (p.grapple.state !== 'attached' && n < 120) { g.step(1); n++; }
+      const attached = p.grapple.state === 'attached';
+      for (let k = 0; k < 400; k++) { const d = b.y + 4 - p.feetY; if (Math.abs(d) < 2) break; g.input.set({ x: 0, y: d > 0 ? 1 : -1 }); g.step(1); }
+      g.input.set({ x: 0, y: 0 });
+      g.setGod(false); p.hp = 400;
+      const winds = [];
+      for (let t = 0; t < 60 * 14; t++) {
+        g.step(1);
+        if (b.state.endsWith('_wind') && winds[winds.length - 1] !== b.state) winds.push(b.state);
+        if (b.state === 'claw' || b.state === 'swipe') break;
+      }
+      return { attached, winds, state: b.state };
+    }, a);
+    assert.ok(rope.attached, 'hooked the hanging pillar');
+    assert.ok(rope.state === 'claw' || rope.state === 'swipe', `claw or swipe against a player hanging beside its head (${rope.winds})`);
+    await shot('35-boss-claw.png');
+    const knocked = await G(() => {
+      const g = window.__gouffre, game = g.game, p = game.player;
+      for (let t = 0; t < 30 && p.grapple.state === 'attached'; t++) g.step(1);
+      const off = p.grapple.state !== 'attached';
+      g.input.clear(); p.hp = p.stats.maxHp; g.setGod(true);
+      game.save.upgrades.grapple = 0; game.refreshStats();
+      return { off, hp: p.hp };
+    });
+    assert.ok(knocked.off, 'knocked off the rope');
+    // its death: minions and projectiles vanish at once; dying in its last breath forfeits the victory
+    const end = await G(() => {
+      const g = window.__gouffre, game = g.game, en = game.enemies, b = en.boss;
+      b.phase = 2; en._summon(b); en._fireRain(b);
+      const summoned = en.list.filter((m) => m.minion && m.alive && m.dying <= 0).length;
+      g.killBoss(); g.step(2);
+      const left = en.list.filter((m) => m.minion && m.alive && m.dying <= 0).length;
+      const proj = en.projectiles.filter((q) => q.active).length;
+      g.step(60 * 2);                       // 2 s into the 3 s death sequence
+      g.setGod(false); g.die('bone');
+      g.step(80);                           // the finale runs while the hero lies dead
+      const snap = { banner: game.hud.bannerT > 0 ? game.hud.bannerTitle : null, bossDefeated: game.run.bossDefeated, finale: en.bossDefeated };
+      g.step(60);
+      g.freeze(false);
+      return { summoned, left, proj, ...snap, state: g.state, victories: game.save.stats.victories };
+    });
+    assert.ok(end.summoned >= 2, 'minions were summoned');
+    assert.equal(end.left, 0, 'minions vanish when the Guardian falls');
+    assert.equal(end.proj, 0, 'every hostile projectile is gone');
+    assert.equal(end.finale, true, 'the death sequence finished');
+    assert.notEqual(end.banner, 'VICTOIRE !', 'no victory banner over a dead hero');
+    assert.equal(end.bossDefeated, false);
+    assert.equal(end.state, 'DEAD');
+    assert.equal(end.victories, vict0, 'no victory counted');
+    } finally {
+      await G(() => { const g = window.__gouffre; g.freeze(false); g.input.clear(); g.game.save.upgrades.grapple = 0; g.game.refreshStats(); });
+    }
+    if ((await G(() => window.__gouffre.state)) !== 'DEAD') await G(() => { window.__gouffre.game.onPlayerDeath('abandon'); window.__gouffre.game.setState('DEAD'); });
+    await page.tap('[data-act=restart]');
+    await waitFor(() => G(() => window.__gouffre.state === 'PLAYING'));
+    await G(() => window.__gouffre.setGod(false));
+  });
+
   await step('ore: mined chunks fill the backpack, banking at the camp turns them into saved gold (survives a reload)', async () => {
     await G(() => { const g = window.__gouffre; g.newRun(424242); g.setGod(true); g.clearEnemies(); });
     await carveGallery(22);
@@ -718,7 +805,8 @@ try {
       return best;
     });
     await G((i) => { const g = window.__gouffre; g.teleportToChest(i); g.clearEnemies(); }, i);
-    const btn = await waitFor(async () => { const l = await G(() => window.__gouffre.input.layout()); return l.interact.hidden ? null : l.interact; }, 2000);
+    // (wait for the label too: right after the Forge step the button may still say "Forge" for a frame)
+    const btn = await waitFor(async () => { const l = await G(() => window.__gouffre.input.layout()); return l.interact.hidden || (await G(() => document.querySelector('.tbtn-ctx').textContent)) !== 'Ouvrir' ? null : l.interact; }, 2000);
     assert.equal(await G(() => document.querySelector('.tbtn-ctx').textContent), 'Ouvrir');
     await settle(300);
     const hudPx = () => G(() => {
@@ -740,6 +828,36 @@ try {
     await shot('31-relic-hud.png');
   });
 
+  await step('camp: a hurt hero heals at the camp; late coins join the same tally and trip; the bag estimate restarts', async () => {
+    await G(() => { const g = window.__gouffre; g.setGod(false); g.clearEnemies(); g.teleportDepth(20); g.giveOre('copper', 3); g.game.player.hp = 7; });
+    await settle(200);
+    const trips0 = (await G(() => window.__gouffre.save())).stats.trips;
+    await G(() => window.__gouffre.teleport(31, 13));                 // back on the camp ground
+    await waitFor(async () => (await G(() => window.__gouffre.run())).bagCount === 0, 2000, 30);
+    await G(() => window.__gouffre.spawnCoins(0, 9, 3));             // coins still flying in
+    await waitFor(() => G(() => window.__gouffre.game.hud.tallyData && window.__gouffre.game.hud.tallyData.total === 15), 3000, 30);
+    await settle(300);
+    await shot('36-camp-rest-tally.png');
+    assert.equal((await G(() => window.__gouffre.save())).stats.trips, trips0 + 1, 'one trip, not one per coin');
+    await waitFor(async () => { const p = await player(); return p.hp >= (await G(() => window.__gouffre.stats())).maxHp; }, 5000, 50);
+    // next trip: one coal -> the estimate is 1 (it used to carry the previous trips' value)
+    await G(() => { const g = window.__gouffre; g.teleportDepth(20); g.giveOre('coal', 1); });
+    assert.equal((await G(() => window.__gouffre.run())).bagValue, 1);
+  });
+
+  await step('pause during the death animation goes straight to the death summary', async () => {
+    await G(() => { const g = window.__gouffre; g.setGod(false); g.clearEnemies(); g.die('slime'); });
+    await settle(250);
+    assert.equal(await G(() => window.__gouffre.state), 'PLAYING', 'death animation playing');
+    const lay = await G(() => window.__gouffre.input.layout());
+    await touch('touchStart', [{ x: lay.pause.x, y: lay.pause.y, id: 24 }]);
+    await touch('touchEnd', []);
+    await waitFor(() => G(() => window.__gouffre.state === 'DEAD'), 1000);
+    assert.equal(await G(() => window.__gouffre.ui()), 'death');
+    await page.tap('[data-act=restart]');
+    await waitFor(() => G(() => window.__gouffre.state === 'PLAYING'));
+  });
+
   await step('pause: "Recommencer l\'expédition" asks, then counts as a death (summary) and regenerates', async () => {
     const seed0 = (await G(() => window.__gouffre.gen())).seed;
     const deaths0 = (await G(() => window.__gouffre.save())).stats.deaths;
@@ -757,6 +875,95 @@ try {
     await page.tap('[data-act=restart]');
     await waitFor(() => G(() => window.__gouffre.state === 'PLAYING'));
     assert.notEqual((await G(() => window.__gouffre.gen())).seed, seed0);
+  });
+
+  await step('touch: menu buttons answer while a thumb rests on the stick; a double tap never confirms abandon / erase', async () => {
+    const center = (sel) => G((sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, sel);
+    const lay = await G(() => window.__gouffre.input.layout());
+    const S = { x: 150, y: 250, id: 41 };
+    await touch('touchStart', [S]);
+    await touch('touchMove', [{ ...S, x: 175 }]);
+    await touch('touchStart', [{ ...S, x: 175 }, { x: lay.pause.x, y: lay.pause.y, id: 42 }]);
+    await touch('touchEnd', [{ x: lay.pause.x, y: lay.pause.y, id: 42 }]);
+    await waitFor(() => G(() => window.__gouffre.state === 'PAUSED'));
+    const r = await center('[data-act=resume]');
+    await touch('touchStart', [{ ...S, x: 175 }, { x: r.x, y: r.y, id: 43 }]);
+    await touch('touchEnd', [{ x: r.x, y: r.y, id: 43 }]);             // the stick thumb stays down
+    await waitFor(() => G(() => window.__gouffre.state === 'PLAYING'), 1000);
+    await touch('touchEnd', []);
+    // double tap on "Recommencer l'expédition": the confirm panel opens, nothing is abandoned
+    const deaths0 = (await G(() => window.__gouffre.save())).stats.deaths;
+    await G(() => window.__gouffre.pause());
+    await settle(100);
+    const ab = await center('[data-act=abandon]');
+    for (let i = 0; i < 2; i++) { await touch('touchStart', [{ ...ab, id: 44 + i }]); await touch('touchEnd', []); await page.waitForTimeout(110); }
+    await settle(200);
+    assert.equal(await G(() => window.__gouffre.state), 'PAUSED', 'still paused');
+    assert.equal((await G(() => window.__gouffre.save())).stats.deaths, deaths0, 'no abandon');
+    const order = await G(() => [...document.querySelectorAll('.row.confirm button')].map((b) => b.dataset.act));
+    assert.deepEqual(order, ['cancel', 'abandon-confirm'], '"Annuler" comes first');
+    await page.tap('[data-act=cancel]');
+    // settings: a double tap on "Effacer la sauvegarde" erases nothing
+    await page.tap('[data-act=title]');
+    await waitFor(() => G(() => window.__gouffre.state === 'TITLE'));
+    const gold0 = (await G(() => window.__gouffre.save())).gold;
+    await G(() => window.__gouffre.setBank(4321));
+    await page.tap('[data-act=settings]');
+    const er = await center('[data-act=erase]');
+    for (let i = 0; i < 3; i++) { await touch('touchStart', [{ ...er, id: 50 + i }]); await touch('touchEnd', []); await page.waitForTimeout(120); }
+    await settle(150);
+    assert.equal((await G(() => JSON.parse(localStorage.getItem('gouffre.save.v1')))).gold, 4321, 'save intact after a triple tap');
+    await shot('37-erase-confirm-armed.png');
+    const danger = await G(() => { const b = document.querySelector('[data-act=erase-confirm]'); if (!b) return null; const r = b.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; });
+    if (danger) assert.ok(er.y < danger.top - 16 || er.y > danger.bottom + 16, 'the red button is not under the finger');
+    if (await page.$('[data-act=cancel]')) await page.tap('[data-act=cancel]');
+    await G((g0) => window.__gouffre.setBank(g0), gold0);
+    await page.tap('[data-act=back]');
+    await page.tap('button[data-act=play]');
+    await waitFor(() => G(() => window.__gouffre.state === 'PLAYING'));
+  });
+
+  await step('gamepad: a button held through a state change never confirms the next menu; D-pad / B navigate', async () => {
+    await G(() => {
+      window.__pad = { connected: true, id: 'mock', index: 0, axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), mapping: 'standard' };
+      Object.defineProperty(navigator, 'getGamepads', { value: () => [window.__pad], configurable: true });
+    });
+    const btn = (i, v) => G(([i, v]) => { window.__pad.buttons[i].pressed = v; }, [i, v]);
+    await settle(100);
+    await btn(0, true);                         // A held (jump)
+    await settle(100);
+    await btn(9, true); await settle(120); await btn(9, false); // Start
+    await settle(250);
+    assert.equal(await G(() => window.__gouffre.state), 'PAUSED', 'the held A did not press "Reprendre"');
+    await btn(0, false);
+    await settle(80);
+    for (let i = 0; i < 2; i++) { await btn(13, true); await settle(60); await btn(13, false); await settle(60); }
+    assert.equal(await G(() => document.activeElement && document.activeElement.dataset.act), 'mute', 'D-pad moved the focus');
+    await btn(1, true); await settle(80); await btn(1, false);  // B = back
+    await waitFor(() => G(() => window.__gouffre.state === 'PLAYING'), 1000);
+    await G(() => { delete navigator.getGamepads; });
+    await settle(100);
+  });
+
+  await step('menus: every button is at least 44 px tall; the pickaxe card shows the rock it unlocks', async () => {
+    await G(() => window.__gouffre.pause());
+    await settle(100);
+    const small = await G(() => [...document.querySelectorAll('#ui button')].filter((b) => b.getBoundingClientRect().height < 44).map((b) => b.dataset.act));
+    assert.deepEqual(small, [], 'pause menu targets');
+    await page.tap('[data-act=resume]');
+    const pick0 = (await G(() => window.__gouffre.save())).upgrades.pick;
+    await G(() => { const game = window.__gouffre.game; game.save.upgrades.pick = 3; game.setState('SHOP'); });
+    await settle(200);
+    const nx = await G(() => {
+      const e = document.querySelector('[data-up=pick] .nx'), c = e.closest('.card');
+      return { text: e.textContent, clipped: e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1 || c.scrollHeight > c.clientHeight + 1 };
+    });
+    assert.match(nx.text, /Basalte, obsidienne/);
+    assert.equal(nx.clipped, false, `"${nx.text}" fully visible`);
+    const fits = await G(() => { const g = document.querySelector('.forge-grid'); return g.scrollHeight <= g.clientHeight + 1; });
+    assert.ok(fits, 'the Forge still fits without scrolling');
+    await shot('38-forge-unlock.png');
+    await G((p0) => { const game = window.__gouffre.game; game.save.upgrades.pick = p0; game.setState('PLAYING'); game.refreshStats(); }, pick0);
   });
 
   await step('reload keeps the save; settings erase it only after a confirmation', async () => {
@@ -781,6 +988,20 @@ try {
     await page.tap('button[data-act=play]');
     await waitFor(() => G(() => window.__gouffre.state === 'PLAYING'));
     assert.equal((await G(() => window.__gouffre.stats())).bagCapacity, 10, 'upgrades reset');
+  });
+
+  await step('storage blocked (Safari "block all cookies"): a notice says progress will not be kept', async () => {
+    const ctx3 = await browser.newContext({ ...pw.devices['iPhone 13 landscape'] });
+    await ctx3.addInitScript(() => { Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('blocked', 'SecurityError'); } }); });
+    const p3 = await ctx3.newPage();
+    const errs = [];
+    p3.on('pageerror', (e) => errs.push(e.message));
+    await p3.goto(`${url}/index.html?seed=12345&mute`);
+    await p3.waitForSelector('.ui-notice', { timeout: 5000 });
+    assert.match(await p3.evaluate(() => document.querySelector('.ui-notice').textContent), /Stockage indisponible/);
+    await p3.screenshot({ path: resolve(SHOTS, '39-storage-notice.png') });
+    await ctx3.close();
+    assert.deepEqual(errs, []);
   });
 
   await step('zero console errors and page errors', async () => {

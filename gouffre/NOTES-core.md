@@ -4,8 +4,8 @@ The single developer reference. `DESIGN.md` stays the contract; its §14 / §14 
 steps 1, 2a and 2b added or changed. Everything below is what exists **now**.
 
 Run it: `npm run serve` then open `http://localhost:8080/index.html` (add `?debug` for FPS/keys).
-Tests: `npm test` (153 unit tests, `node --test`) and `npm run test:e2e` (Playwright smoke, iPhone 13
-landscape with touch, 35 steps incl. review regressions, combat, the boss fight and the whole meta loop,
+Tests: `npm test` (164 unit tests, `node --test`) and `npm run test:e2e` (Playwright smoke, iPhone 13
+landscape with touch, 42 steps incl. review regressions, combat, the boss fight and the whole meta loop,
 screenshots in `tests/e2e/screenshots/`, git-ignored). Economy model: `npm run economy`.
 
 ## What exists
@@ -46,19 +46,19 @@ screenshots in `tests/e2e/screenshots/`, git-ignored). Economy model: `npm run e
 | `world.js` | `new World(w,h)`: `types, back, damage, damaged[], chunkVersion, skyTop, version`; `get/set/setRaw`, `isSolid(tx,ty)`, `isSolidAt(px,py)`, `damageTile(tx,ty,dmg,tier) → {hit,broken,tooHard,tileId,ratio}`, `crackStage`, `update(dt)` (3 s regen), `rectSolid`, `rectHazard`, `clearDetachedDeco(tx,ty,onCleared?) → n` (called by `game.tileBroken`: roots/stalactites below, stalagmites/mushrooms/skulls above, unsupported cobwebs beside), `decoSupported(tx,ty)` |
 | `worldgen.js` | `generateWorld(seed) → { world, spawns, chests, camp, arena, seed }` (see header comment for record shapes). Invariant (tested on 40 seeds): lava never has open space beside or below it (`crustExposedLava` runs after the arena vestibule is carved) |
 | `physics.js` | `moveAndCollide(body, dt, world) → {onGround,hitCeiling,hitLeft,hitRight}` (body = `{x,y,w,h,vx,vy,cornerCorrection?}`, top-left AABB, sub-stepped), `raycast(world,x,y,dx,dy,max) → {x,y,tx,ty,dist,nx,ny}|null`, `touchingBelow` |
-| `input.js` | `moveX/moveY`, `aimX/aimY/aimActive`, `pressed/held/released(a)`; actions `jump attack grapple interact pause`; `beginTick()/endTick()` (edge protocol), `inject({x,y,jump,...})`, `tap(a)`, `clearInjected()`, `setContextAction(label|null)`, `setControlsVisible(b)`, `getLayout()`, `poll()` (gamepad; a disconnected pad releases its stick + buttons). Sliding a finger between action buttons re-points the touch before releasing the old button. After `resetAll()` (pause/blur) a still-held arrow key comes back with its auto-repeat and a thumb still on the left half is adopted as a new stick on its next move |
+| `input.js` | `moveX/moveY`, `aimX/aimY/aimActive`, `pressed/held/released(a)`; actions `jump attack grapple interact pause`; `beginTick()/endTick()` (edge protocol), `inject({x,y,jump,...})`, `tap(a)`, `clearInjected()`, `setContextAction(label|null)`, `setControlsVisible(b)`, `getLayout()`, `bottomBand()` (CSS px from the screen bottom to the top of Saut / Frapper), `poll()` (gamepad; a disconnected pad releases its stick + buttons). Sliding a finger between action buttons re-points the touch before releasing the old button. After `resetAll()` (pause/blur) a still-held arrow key comes back with its auto-repeat and a thumb still on the left half is adopted as a new stick on its next move; a **pad button held through `resetAll()` (any PLAYING → menu change) is ignored until released** (`padBlock`), so a held A / Start never confirms the menu that just opened. Menus: `navX/navY` (stick / D-pad focus moves, 380 ms then 150 ms auto-repeat) and `takePadBack()` (B), handed to `ui.move()` / `ui.back()` by main |
 | `player.js` | `new Player(game)`: `reset(cx,feetY)`, `teleport`, `update(dt)`, `strike()` (enemies, then chests via `entities.hitChests`, then tiles), `strikeBox(dir)`, `takeDamage(amount, sourceX, opts) → bool` (`opts.cause` feeds the death screen), `heal(n)`, `die(cause)`; fields `stats` (see `baseStats()`: upgrade stats + relic stats `airJumps glide killHeal magnetMul oreMul goldMul regen hookSpeed firePick insurance`), `hp, facing, onGround, anim, animFrame, iframes, dead, grapple, airJumpsLeft, gliding`; getters `cx, cy, feetY, tileX, tileY, depth` |
 | `grapple.js` | `new Grapple(game, player)` (owned by the player): `state` idle/flying/attached/retracting, `onPress()` (a press while retracting re-fires at once), `fire()`, `release(jump)`, `preMove/postMove/update`, `predicted` (reticle), `length`, `maxLength` (= max(range × `GRAPPLE.payOutMul`, length at attach)), pure helpers `ropeConstrainVelocity`, `ropeCorrection`, `aimAssist`. Attach keeps the real distance (no yank when catching a fall); the reel-in pull only applies while up is held; positional correction is capped at `GRAPPLE.maxCorrection` px/tick |
-| `render.js` | `Camera`: `update(dt)`, `snap()`, `shake(px, s)`, `renderPos(alpha, out?, anchorX?, anchorY?)` (with an anchor: `round(a) - round(a - cam)`, the renderer anchors on the interpolated player so the hero never shimmers; entities are drawn at `round(x) - camX` as before); `Renderer`: `resize(cssW,cssH,dpr)`, `render(alpha)`, `invalidateAll()` |
+| `render.js` | `Camera`: `update(dt)`, `snap()`, `shake(px, s)`, `bottomBand()` (internal px hidden by the thumb buttons, 0 without touch controls; the boss framing lifts the arena floor above it, cropping ≤ `BOSS.cameraMaxCrop` px of ceiling), `renderPos(alpha, out?, anchorX?, anchorY?)` (with an anchor: `round(a) - round(a - cam)`, the renderer anchors on the interpolated player so the hero never shimmers; entities are drawn at `round(x) - camX` as before); `Renderer`: `resize(cssW,cssH,dpr)`, `render(alpha)`, `invalidateAll()` |
 | `lighting.js` | `compute(camX,camY,w,h)` (reads lights, never clears them), `draw(ctx,camX,camY)`, `clearDynamic()` (called at the start of every fixed tick by `updatePlaying`), `addLight(x,y,intensity,[r,g,b])` (pooled, no allocation; valid until the next tick, so lights stay on in 120 Hz frames without a tick, during hit-stop and pause; call it from any fixed-update code, e.g. `enemies.addLights`), `addStatic(...)`, `clearStatics()` |
 | `sprites.js` | `loadSprites()`, `getSprite(name)`, `drawSprite(ctx,name,frame,x,y,flipX)` (x,y = anchor), `getTileTexture`, `getBackTexture`, `makeIcon(name,cssPx)`, `backdrop`. Preview every sprite: `tools/sprites.html` |
 | `particles.js` | `spawn(kind,x,y,opts)`: `debris chip dust land spark ember blood poof glint smoke`; `update`, `draw`, `clear` |
 | `audio.js` | `play(name,{volume,pitch,material})`, `setMuted/toggleMute`, `unlock()`, `setLayer(i)`, `suspend/resume` (`unlock`/`resume` wake the context from `suspended` and WebKit's iOS `interrupted` state; rejections are swallowed) |
 | `hud.js` | `drawText(ctx,str,x,y,color,{align,outline,shadow,alpha})`, `measureText` (glyphs incl. `≈ × — «»`); `Hud`: `toast(text,{color,sub,life,icon})` (queued: 3 on screen, 8 waiting, duplicates refreshed), `banner(title,sub)`, `tally(bankSummary)` (banking panel, counts up with coin ticks, then `bank` sfx), `tallyActive`, `flash(color,dur)`, `flashDamage()`, `setHint(text)`, `reset()` (new world). Number texts are cached (`TextMemo`): no string building per frame |
 | `debug.js` | flags `?debug ?god ?seed= ?depth= ?gold=` (run gold) `?bank=` (banked gold) `?autostart ?mute ?nosw`; `window.__gouffre` (see "Debug API") |
-| `meta.js` | save (`defaultSave`, `migrateSave`, `loadSave`, `loadSaveEx → {save,status}`, `saveGame`, `clearSave`, `storageAvailable`), Forge (`UPGRADES`, `UPGRADE_KEYS`, `TIER_NAMES`, `upgradeCost`, `canBuy`, `buyUpgrade`), relics (`RELICS`, `RELIC_KEYS`, `rollRelic(rnd, layer, owned)`), `applyUpgrades(player, save, relics?)`, loot (`bagValue`, `bankLoot`, `settleDeath`, `clearLoot`) |
+| `meta.js` | save (`defaultSave`, `migrateSave`, `loadSave`, `loadSaveEx → {save,status}`, `saveGame`, `clearSave`, `storageAvailable`), Forge (`UPGRADES`, `UPGRADE_KEYS`, `TIER_NAMES`, `upgradeCost`, `canBuy`, `buyUpgrade`), relics (`RELICS`, `RELIC_KEYS`, `rollRelic(rnd, layer, owned)`), `applyUpgrades(player, save, relics?)`, loot (`bagValue`, `bankLoot(save, run, stats, { newTrip = true })`, `settleDeath`, `clearLoot` — also resets `run.bagValue`, the HUD estimate) |
 | `entities.js` | `EntityManager`: pickups (coins, hearts, ore chunks), chests, popups — see "Economy & meta loop" |
-| `ui.js` | `showTitle / showSettings / showPause / showShop / showDeath / showVictory`, `hide()`, `refresh()`, `notice(text)`, `back()`, `activate()`, `move(dx,dy)`, `relayout()`; `causeText(cause)` |
+| `ui.js` | `showTitle / showSettings / showPause({…, canAbandon}) / showShop / showDeath / showVictory`, `hide()`, `refresh()`, `notice(text, life)`, `back()`, `activate()`, `move(dx,dy)`, `relayout()`; `causeText(cause)`. Buttons press on the **pointerup of the finger that went down on them** (works while another finger rests on the stick; browsers only turn single-finger taps into clicks) and on click for mouse / keyboard (a click within 700 ms of a touch press is ignored) |
 | `main.js` | builds the `game` context (below), loop, resize, states, meta hooks (bank, death, victory, purchases) |
 
 ### The `game` context
@@ -70,18 +70,24 @@ save, saveStatus, run, runActive, deathInfo, victoryInfo, state, time, flags, sa
 `game.fixedStep(dt)`; step 2b: `game.persist()`, `game.refreshStats()` (base → upgrades → run relics; a larger
 max HP heals the gain), `game.buy(key)`, `game.bank()`, `game.abandonRun()`, `game.finishVictory()`,
 `game.continueNgPlus()`, `game.toTitle()`, `game.eraseSave()`, `game.setMuted(b)` / `game.toggleMute()`.
-`game.camera.shake` is wrapped by the "Secousses" setting.
+`game.camera.shake` is wrapped by the "Secousses" setting. Review fixes: `game.bank(newTrip = true)`,
+`game.requestPause()` (pause button / Échap / app hidden / portrait: during the death animation it opens the
+death summary instead of a pause menu), `game.persist()` returns the `saveGame` result and the first failure
+shows a notice once (`game.storageWarned`; also at boot when storage is unavailable), `game.onBossDefeated()`
+does nothing when the run is over or the hero is dead.
 
 `game.run = { seed, gold, bag: { oreKey: count }, bagCount, bagValue, relics: [], bestDepth, maxLayer, kills,
-time, banked, ore, chests, ngPlus, bossDefeated, over }` (`gold` = coins not yet banked, `bagValue` = base value
-of the bag, `banked` = gold banked during this run, `over` = settled by a death / abandon / victory).
+time, banked, ore, chests, ngPlus, bossDefeated, over, awayFromCamp, tripGold }` (`gold` = coins not yet banked,
+`bagValue` = base value of the bag, `banked` = gold banked during this run, `over` = settled by a death / abandon /
+victory, `awayFromCamp` = the hero left the camp zone since the last bank, `tripGold` = gold banked this trip).
 `newWorld` creates the run **before** `enemies.reset` so enemies read `run.ngPlus` (copied from `save.ngPlus`).
 
 ### Fixed-update order (`updatePlaying`)
-pause check → `lighting.clearDynamic` → `world.update` → `player.update` (input, grapple, move, strike) → `enemies.update` →
+pause check (`requestPause`) → `lighting.clearDynamic` → `world.update` → `player.update` (input, grapple, move, strike) → `enemies.update` →
 `entities.update` → `particles.update` → `camera.update` → `hud.update` → ambient FX → `enemies.addLights`
 → `run.time` / best depth → layer banner / music → Forge / chest proximity (context button, E) → **banking**
-(feet ≤ `camp.bankY` with loot) → victory timer → death timer.
+(feet ≤ `camp.bankY` with loot; a new trip only if the hero left the camp since the last bank) → **camp rest**
+(`ECONOMY.campHealRate` × max HP per second while in the camp zone) → victory timer → death timer.
 
 ## Enemies & combat
 
@@ -122,14 +128,27 @@ pause check → `lighting.clearDynamic` → `world.update` → `player.update` (
 | golem | slow heavy patrol, stomps (telegraph) then charges when level with the player; stunned on walls; resists knockback |
 
 ### Le Gardien de l'Abysse (`config.BOSS`)
+Box 34 × 56 px (the 64 px sprite up to the head; only the horn tips stick out): contact, strikes and its blows
+all use it. ≈ 2650 HP at d 272 (base 480): about a minute of fighting for a floor fighter with the 26-damage
+pickaxe (bot: 55–60 s, 3 phases, every signature attack seen). Arena interior columns 9..62 (narrower than
+the 72-column world, so the right wall stays left of the thumb buttons at every iPhone size).
 Dormant (kneeling, dim) until the player is inside the arena interior → gates (`gate` tiles, rows
 `outer.y0..+1` over the entrance) seal, banner, 2.2 s roar (invulnerable), boss bar fills. Attacks, each with
-a wind-up pose + red telegraph blink: **phase 1** (100–66 %) claw swipe (close) / ground slam sending a
-shockwave both ways (jump it); **phase 2** (66–33 %) double slam, summons bats (skeleton too in phase 3);
-**phase 3** (< 33 %, enraged palette, orange light) fire rain (ceiling sigils + floor marks, a meteor always
-above the player, gaps between them) and a charge across the arena (stunned on the wall). Phase changes are
-1.6 s invulnerable roars. Death: 3 s of explosions / flashes / sinking, white screen flash, 24 coins + 2 big
-hearts, minions and hazards vanish, gates reopen, then **`game.onBossDefeated()`** (once).
+a wind-up pose + red telegraph blink: **every phase** claw swipe (close; sweeps the whole body height and
+`swipeReachUp` above the head) and **rising claw** (`claw_wind` → `claw`: against a player above its shoulders
+— on a rope, a platform or bouncing on its head — within `clawRange`; reaches `clawReach` above the head, never
+a player standing on the floor); a Guardian blow knocks the player off the rope (`_bossHit`); **phase 1**
+(100–66 %) ground slam sending a shockwave both ways (jump it; the fists hit anything beside the body);
+**phase 2** (66–33 %) double slam, summons bats (skeleton too in phase 3; summons drop a heart 30 % of the time,
+never coins); **phase 3** (< 33 %, enraged palette, orange light) fire rain (ceiling sigils + floor marks, a
+meteor always above the player, gaps between them) and a charge across the arena (head down: its contact box
+is `chargeDuck` px lower, so it can be jumped; stunned on the wall). Each phase **opens with its signature
+attack** (`BOSS.signature`: phase 2 summons, phase 3 fire rain then a charge) and a single blow never carries
+it past a threshold (HP clamped at 66 % / 33 %). Phase changes are 1.6 s invulnerable roars. Death (`kill`):
+**truce** (`enemies.truce`: no contact / projectile / boss damage any more), minions die at once (no drops) and
+every hostile projectile (bones included) vanishes; 3 s of explosions / flashes / sinking, white screen flash,
+24 coins + 2 big hearts, gates reopen, then **`game.onBossDefeated()`** (once; ignored if the hero is dead).
+Camera: `cameraFocusY` + `arenaFloorY` / `arenaTopY` (touch: floor lifted above the thumb buttons).
 
 ### Pickups (`entities.js`)
 `spawnCoins(x, y, value, { count })` (value split exactly, ≥ 1 per coin), `spawnHeart(x, y, heal)`,
@@ -165,6 +184,11 @@ l'abri", count-up with coin ticks, then the `bank` "cha-ching") → spend at the
 except `floor(value × stats.insurance)`, which is banked at once; relics are lost; stats saved; after
 `ECONOMY.deathDelay` (1.6 s of death animation) the DOM death summary; "Nouvelle expédition" = `game.newRun()`
 (new random seed, full HP, camp, empty bag, no relics). The mine persists while the player lives.
+Resting in the camp zone heals quickly (35 % of max HP per second, toast "Repos au camp"), so surviving a trip
+always beats dying for a heal. Loot that lands while the hero is still in the camp after a bank (magnetised
+coins in flight) is banked with `newTrip = false`: same trip (`stats.trips` once, `stats.bestTrip` = the trip
+total), and the HUD tally on screen adds it up instead of restarting. Ore / hearts are re-checked per pickup
+(two chunks on the same tick never overfill the bag, a second heart waits if the first one filled the HP).
 
 ### Save (`meta.js`, localStorage `gouffre.save.v1`)
 `{ version: 2, gold, upgrades: { pick, vitality, armor, grapple, bag, lantern, boots, insurance },
@@ -232,7 +256,11 @@ The HUD shows `NG+n` under the depth gauge.
 - **Réglages**: Son, Secousses (camera shake), "Effacer la sauvegarde" → confirmation panel
   ("Effacer définitivement" / "Annuler"); settings survive an erase. Storage notice when unavailable.
 - **Pause**: run line (depth, bag, unbanked gold, relics), Reprendre, Son, "Recommencer l'expédition"
-  (confirmation, then the abandon death flow), "Retour au titre" (the run stays in memory).
+  (confirmation, then the abandon death flow; hidden while the beaten Guardian dies), "Retour au titre" (the run
+  stays in memory). A pause request during the death animation opens the death summary instead.
+- **Confirmations** ("Effacer la sauvegarde", "Recommencer l'expédition"): "Annuler" (primary, default) above the
+  red button, which stays disabled for 550 ms (`CONFIRM_ARM`) and is pushed down if it would sit under the finger
+  that opened the panel (`_keepClear`): a double / triple tap can never confirm.
 - **Forge**: header (title, banked gold pill, Retour), 2-column grid of 8 cards (icon, level pips, name,
   description when the screen is tall enough, current effect, "→ next effect", buy button with cost:
   disabled when unaffordable or "MAX"), footer feedback ("Sac : niveau 1 ! 16 minerais", "Il te manque N or").
@@ -244,11 +272,14 @@ The HUD shows `NG+n` under the depth gauge.
 - **Victory**: pixel "VICTOIRE" logo, stats grid, relics, "Continuer (NG+ n)" (`data-act=ngplus`), "Retour au titre".
 - Keyboard: arrows / WASD move the focus spatially (wraps around), Entrée / Espace / Z / X press, Échap / P
   back (E closes the Forge). Captured at window level before `input.js` while an overlay is open, so menu
-  keys never leak into the game. Gamepad: main calls `ui.activate()` / `ui.back()`. Buttons: ≥ 42 px tall,
-  `touch-action: manipulation`; overlays pad with `env(safe-area-inset-*)`; compact sizes under 420 px height.
+  keys never leak into the game. Gamepad: stick / D-pad move the focus, A / Y press (`ui.activate()`), Start / B
+  back. Buttons: ≥ 44 px tall at every size (iOS minimum target), `touch-action: manipulation`; overlays pad
+  with `env(safe-area-inset-*)`; compact sizes under 420 px height, tighter Forge spacing under 360 px so the
+  pickaxe card's two-line "next level" (with the rock it unlocks) fits without scrolling.
 
 ### HUD (`hud.js`)
-Top left: HP bar; run gold; backpack icon + `n/cap` + fill gauge + `≈value` (× Avarice); relic icons.
+Top left: HP bar; run gold; backpack icon + `n/cap` + fill gauge + `≈value` (× Avarice); relic icons. The boss
+bar narrows so it never covers this block (Pro Max: 4-digit estimates).
 Top right: depth + layer name + layer gauge (white = you, gold = run best, red = all-time record), or in the
 camp "CAMP" + banked gold (counts up after a tally); `NG+n`. Boss bar top centre during the fight. Banner,
 tally panel, queued toasts (with optional icon), damage vignette, desktop hint line ("E : FORGE", "E : OUVRIR").
@@ -312,7 +343,11 @@ name), `spawnOre(dx, key, n)`, `giveOre(key, n)`, `bank()`, `chests()`, `telepor
 - Audio cannot be verified by tests beyond "no errors"; iOS unlock happens on the first tap / "Jouer".
 - Unbanked loot is not saved: reloading the page during an expedition starts a new one (no death counted).
 - The economy curve is a model (see "Economy curve"); real players who explore more or die less progress faster.
-- On very small landscape screens (iPhone SE, 667×375 CSS) long Forge labels are ellipsised.
+- On very small landscape screens (iPhone SE, 667×375 CSS) the "Bourse de secours" card title is ellipsised
+  (the pickaxe unlock text wraps on two lines and stays readable everywhere).
+- The worst-case death summary (8 ore kinds + all 11 relics) is ~20 px taller than a 342 px Safari viewport;
+  its title is clipped in that extreme case.
+- Gamepad support is basic (standard mapping only); the Forge's default pad focus is "Retour".
 - Enemies that leave the active zone freeze where they are (even mid-air) until the camera comes back.
 - The Guardian's arena walls are Heart bricks (hp 40, tier 3): a max-tier pick can dig out of the sealed
   arena; the boss keeps its state and the camera stops framing the arena while the player is outside.

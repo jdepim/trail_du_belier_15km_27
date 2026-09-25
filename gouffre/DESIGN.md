@@ -260,7 +260,8 @@ Détails et APIs : `NOTES-core.md`, section « Enemies & combat ».
   `ENEMY_AI` (comportements), `ENEMY_SPAWNING` (réapparition : intervalle et plafond local par couche, plafond
   global 72), `ENEMY_ACTIVE` (zone active ≈ 1,25 largeur × 1,5 hauteur d'écran autour de la caméra), `DROPS`, `BOSS`.
   Équilibrage : couche 1 douce (gelée 2-3 coups, ~6 dégâts), chaque couche ≈ ×1,5-2 en PV et dégâts moyens ;
-  le Gardien ≈ 830 PV (150 de base × profondeur). NG+ lu dans `run.ngPlus` (copié de `save.ngPlus`).
+  le Gardien ≈ 2650 PV (480 de base × profondeur, ≈ 1 min de combat avec la pioche niveau 4 ; hitbox 34 × 56 px
+  jusqu'à la tête). NG+ lu dans `run.ngPlus` (copié de `save.ngPlus`).
 - Nouvelle tuile `gate` (« Herse du Cœur », indestructible) : scelle l'entrée de l'arène pendant le combat.
 - Les pièces vont **directement** dans l'or de run (`run.gold`) ; les cœurs ne sont ramassés (et aimantés) que si
   le joueur est blessé ; le cristal de vie libère un cœur (20 PV) au lieu de soigner instantanément.
@@ -269,7 +270,12 @@ Détails et APIs : `NOTES-core.md`, section « Enemies & combat ».
 - Les ennemis volants ne remontent pas dans le camp (zone sûre). Les boules de feu brûlent la terre / l'herbe.
 - Boss : 3 phases (66 % / 33 %), transitions invulnérables ; phase 1 griffe + onde de choc au sol, phase 2
   double onde + invocation de chauves-souris, phase 3 (enragé) pluie de feu signalée + charge + squelettes.
-  La caméra cadre toute l'arène pendant le combat ; la barre de vie (nom + crans de phase) est en haut au centre.
+  Dans toutes les phases, une **griffe montante** répond au joueur placé au-dessus de ses épaules (corde, plateforme,
+  rebond sur sa tête) et chaque coup du Gardien fait lâcher la corde ; chaque phase s'ouvre sur son attaque signature
+  (invocation, puis pluie de feu + charge) et un coup ne fait jamais sauter une phase. Sa mort impose une trêve :
+  serviteurs et projectiles disparaissent aussitôt.
+  La caméra cadre toute l'arène pendant le combat (en tactile, le sol reste au-dessus des boutons du pouce ; l'arène
+  occupe les colonnes 9 à 62) ; la barre de vie (nom + crans de phase) est en haut au centre.
   À sa mort : séquence d'explosions, trésor, herses rouvertes, puis `game.onBossDefeated()` (l'étape 2b y
   branche l'écran de victoire ; pour l'instant bannière + toast).
 
@@ -283,12 +289,15 @@ Détails, tableaux et APIs : `NOTES-core.md`, section « Economy & meta loop ».
   `gouffre.save.v1.corrupt` avant d'être remplacée. L'expédition en cours (mine, sac, position) n'est pas
   sauvegardée : recharger la page en démarre une nouvelle (butin non banqué perdu, aucune mort comptée).
 - **Banque** : déclenchée quand les pieds du joueur sont au niveau de la surface ou au-dessus
-  (`feetY <= camp.bankY`), donc dès qu'on remonte sur le sol du camp.
+  (`feetY <= camp.bankY`), donc dès qu'on remonte sur le sol du camp. Le butin qui arrive juste après (pièces
+  aimantées) s'ajoute au même voyage et au même décompte. **Au camp, les PV remontent vite** (35 % par seconde).
 - **Minerais** : 1 bloc de minerai = 1 éclat = 1 unité de sac (valeur du minerai). Sac plein : l'éclat n'est plus
   aimanté et reste au sol (300 s), toast « Sac plein ! ».
 - **Bourse de secours** : s'applique à tout le butin non banqué (sac **et** or de run), et la part conservée est
   **banquée immédiatement** à la mort ; la nouvelle expédition repart donc toujours avec un sac vide.
-- **Abandon** (« Recommencer l'expédition », menu pause) = une mort (même règlement, écran de résumé).
+- **Abandon** (« Recommencer l'expédition », menu pause) = une mort (même règlement, écran de résumé). La
+  confirmation place « Annuler » d'abord et arme le bouton rouge après 0,55 s (idem pour « Effacer la sauvegarde »).
+  Mettre en pause pendant l'animation de mort ouvre directement le résumé.
 - **Forge** : niveaux max pioche 5, vitalité 5, armure 5, grappin 4, sac 5, lanterne 4, bottes 3, bourse 2.
   Pioche : tiers 0/1/2/2/3/3 (la 1ʳᵉ amélioration débloque les briques), dégâts d'attaque 10 + 4 × niveau.
   Coûts équilibrés par `tools/economy.mjs` (1ʳᵉ amélioration après une courte descente, dureté 1 vers la 3ᵉ,

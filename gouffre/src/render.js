@@ -1,6 +1,6 @@
 // Rendering: integer-scaled internal canvas, camera, parallax backdrop, chunk-cached
 // tiles, dynamic tiles (lava, torches), cracks, player, rope, then lighting + HUD.
-import { TILE, CHUNK, WORLD_W, WORLD_H, SURFACE_Y, BASE_VIEW_H, CAMERA } from './config.js';
+import { TILE, CHUNK, WORLD_W, WORLD_H, SURFACE_Y, BASE_VIEW_H, CAMERA, BOSS } from './config.js';
 import { TILES, SOLID, TILE_ID as T } from './tiles.js';
 import {
   getTileTexture, tileVariantCount, getBackTexture, getCrack, getLavaFrame, getFlameFrame,
@@ -23,6 +23,14 @@ export class Camera {
     this.shakeT = 0; this.shakeDur = 1; this.shakeMag = 0;
     this.shakeX = 0; this.shakeY = 0;
     this._seed = 1;
+    this._t = { x: 0, y: 0 };
+  }
+
+  /** Internal px at the bottom of the view hidden by the Saut / Frapper thumb buttons (0 without touch). */
+  bottomBand() {
+    const g = this.game, inp = g.input;
+    if (!inp || !inp.controlsVisible || !inp.touchEnabled || !inp.bottomBand || !g.renderer) return 0;
+    return inp.bottomBand() * (g.renderer.cssToInternal || 0);
   }
 
   _target() {
@@ -30,10 +38,15 @@ export class Camera {
     // boss fight: frame the whole arena vertically (enemies.cameraFocusY), follow the player sideways
     const en = this.game.enemies;
     const focusY = en ? en.cameraFocusY : null;
-    return {
-      x: p.cx + this.lookX - this.viewW / 2,
-      y: focusY !== null && focusY !== undefined ? focusY - this.viewH / 2 : p.cy + CAMERA.offsetY + this.lookY - this.viewH / 2,
-    };
+    const t = this._t;
+    t.x = p.cx + this.lookX - this.viewW / 2;
+    if (focusY !== null && focusY !== undefined) {
+      t.y = focusY - this.viewH / 2;
+      // touch: lift the arena floor above the thumb buttons, cropping a little of the ceiling instead
+      const band = this.bottomBand();
+      if (band > 0) t.y = Math.min(en.arenaTopY + BOSS.cameraMaxCrop, Math.max(t.y, en.arenaFloorY + band + 6 - this.viewH));
+    } else t.y = p.cy + CAMERA.offsetY + this.lookY - this.viewH / 2;
+    return t;
   }
 
   _clamp() {

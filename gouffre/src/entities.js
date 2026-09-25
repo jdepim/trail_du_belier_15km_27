@@ -174,8 +174,6 @@ export class EntityManager {
   update(dt) {
     const g = this.game, pl = g.player, world = g.world;
     const pcx = pl.cx, pcy = pl.cy;
-    const hurt = pl.hp < pl.stats.maxHp;
-    const full = this._bagFull();
     const mr = DROPS.magnetRadius * (pl.stats.magnetMul || 1);
     const cam = g.camera;
     const ccx = cam ? cam.x + cam.viewW / 2 : pcx, ccy = cam ? cam.y + cam.viewH / 2 : pcy;
@@ -194,7 +192,9 @@ export class EntityManager {
       if (p.t >= p.life) { p.active = false; continue; }
       const dx = pcx - cx, dy = pcy - cy;
       const d2 = dx * dx + dy * dy;
-      const wanted = p.kind === K_HEART ? hurt : p.kind === K_ORE ? !full : true;
+      // re-checked for every pickup: two chunks / hearts collected in the same tick must
+      // not overfill the backpack or waste a heart on full HP
+      const wanted = p.kind === K_HEART ? pl.hp < pl.stats.maxHp : p.kind === K_ORE ? !this._bagFull() : true;
       if (!pl.dead && wanted && p.t > DROPS.magnetDelay && (p.magnet || d2 < mr * mr)) {
         // magnetised: fly to the player through everything
         p.magnet = true;

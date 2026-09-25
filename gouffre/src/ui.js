@@ -2,7 +2,7 @@
 //
 //   showTitle({ runActive, runDepth, onPlay, onSettings })
 //   showSettings({ storage, onToggleMute, onToggleShake, onErase, onBack })
-//   showPause({ run, player, onResume, onAbandon, onTitle, onToggleMute })
+//   showPause({ run, player, canAbandon, onResume, onAbandon, onTitle, onToggleMute })
 //   showShop({ onBuy(key) -> buyUpgrade result, onClose })
 //   showDeath(summary, { onRestart, onTitle })        summary = meta.settleDeath()
 //   showVictory(info, { onContinue, onTitle })
@@ -12,8 +12,12 @@
 // Z / X press the focused one (or the panel's default), Échap / P go back (E closes
 // the Forge). Those keys are captured before input.js while an overlay is open, so a
 // menu key never leaks into the game. Gamepad / injected presses reach back() and
-// activate() through main.js. Touch: plain buttons (big targets), safe areas are the
-// overlay padding, and the Forge list scrolls on its own if it ever overflows.
+// activate() through main.js (the pad stick / D-pad moves the focus). Touch: buttons press
+// on pointerup of the finger that went down on them, so they work while another finger
+// still rests on the screen (the stick thumb); the click that follows is ignored.
+// Destructive confirmations ("Effacer définitivement", "Abandonner") sit after "Annuler"
+// and stay disabled for CONFIRM_ARM ms, so a double tap can never confirm by accident.
+// Safe areas are the overlay padding; the Forge list scrolls on its own if it overflows.
 import { drawText, measureText } from './hud.js';
 import { makeIcon } from './sprites.js';
 import { UPGRADES, UPGRADE_KEYS, upgradeCost, RELICS } from './meta.js';
@@ -85,6 +89,9 @@ const NAV = {
   ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0],
 };
 const OK_KEYS = { Enter: 1, NumpadEnter: 1, Space: 1, KeyZ: 1, KeyX: 1, KeyJ: 1 };
+const CONFIRM_ARM = 550;   // ms a destructive confirm button stays disabled after it appears
+const CLICK_GUARD = 700;   // ms after a touch press during which the synthetic click is ignored
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 const BACK_KEYS = { Escape: 1, KeyP: 1 };
 
 export class UI {
@@ -94,6 +101,8 @@ export class UI {
     this.current = null;
     this.name = null;
     this.noticeEl = null;
+    this.touchPressT = -1e9; // last button pressed by a touch (pointerup)
+    this.pressPt = { x: 0, y: 0, ok: false }; // where the last button press happened (CSS px)
     // captured before input.js (window capture phase), only while an overlay is open
     if (typeof window !== 'undefined') window.addEventListener('keydown', (e) => this._onKey(e), true);
   }
@@ -147,12 +156,67 @@ export class UI {
     b.appendChild(el('span', 'lbl', label));
     if (sub) b.appendChild(el('span', 'sub', sub));
     if (act) b.dataset.act = act;
-    b.addEventListener('click', (e) => {
-      e.preventDefault();
+    this._bindPress(b, () => {
       this.game.audio.unlock();
       this.game.audio.play('ui');
       onClick(b);
     });
+    return b;
+  }
+
+  /**
+   * Press handling for overlay buttons. Touch / pen: the finger that went down on the
+   * button presses it on pointerup (browsers only turn single-finger taps into clicks,
+   * so a thumb resting on the stick would make click-only buttons dead); sliding off
+   * cancels. Mouse / keyboard / ui.activate(): the click. The click that a touch
+   * produces afterwards is ignored, even if the panel was rebuilt under the finger.
+   */
+  _bindPress(b, fire) {
+    let pid = null;
+    b.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'mouse') pid = e.pointerId; });
+    b.addEventListener('pointercancel', (e) => { if (e.pointerId === pid) pid = null; });
+    b.addEventListener('pointerup', (e) => {
+      if (e.pointerId !== pid) return;
+      pid = null;
+      const r = b.getBoundingClientRect();
+      if (e.clientX < r.left - 6 || e.clientX > r.right + 6 || e.clientY < r.top - 6 || e.clientY > r.bottom + 6) return;
+      if (b.disabled || !b.isConnected) return;
+      this.touchPressT = now();
+      this._notePress(e.clientX, e.clientY, true);
+      fire(e);
+    });
+    b.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (b.disabled || now() - this.touchPressT < CLICK_GUARD) return;
+      this._notePress(e.clientX, e.clientY, e.detail > 0); // detail 0: keyboard / activate()
+      fire(e);
+    });
+  }
+
+  _notePress(x, y, ok) { this.pressPt.x = x; this.pressPt.y = y; this.pressPt.ok = ok; }
+
+  /**
+   * A destructive confirm button must not appear under the finger that opened the
+   * confirmation (a second tap would land on it): push it down until it clears the
+   * last press point (the panel is centred, so it moves half the added margin).
+   */
+  _keepClear(b) {
+    const pt = this.pressPt;
+    if (!pt.ok || !b.isConnected) return;
+    for (let i = 0; i < 4; i++) {
+      const r = b.getBoundingClientRect();
+      const pad = 16; // touch-adjustment radius around the finger
+      if (pt.x < r.left - pad || pt.x > r.right + pad || pt.y < r.top - pad || pt.y > r.bottom + pad) return;
+      const need = pt.y + pad - r.top + 2;
+      b.style.marginTop = (parseFloat(b.style.marginTop) || 0) + need * 2 + 'px';
+    }
+  }
+
+  /** Destructive confirm button: disabled for a moment so a double tap cannot reach it. */
+  _arm(b) {
+    b.disabled = true;
+    b.classList.add('arming');
+    setTimeout(() => { b.disabled = false; b.classList.remove('arming'); }, CONFIRM_ARM);
     return b;
   }
 
@@ -269,30 +333,33 @@ export class UI {
       box.replaceChildren();
       box.appendChild(el('h2', 'red', 'Tout effacer ?'));
       box.appendChild(el('p', '', 'Or banqué, améliorations de la Forge et statistiques seront perdus à jamais.'));
-      const row = el('div', 'row');
-      row.appendChild(this._button('Effacer définitivement', () => {
+      const row = el('div', 'row confirm');
+      // "Annuler" first: the safe choice comes before (and the red one is armed late)
+      row.appendChild(this._button('Annuler', () => this.showSettings({ storage, onToggleMute, onToggleShake, onErase, onBack }), 'primary', 'cancel'));
+      row.appendChild(this._arm(this._button('Effacer définitivement', () => {
         onErase();
         this.showSettings({ storage, onToggleMute, onToggleShake, onErase, onBack });
         const m = this.current && this.current.querySelector('.msg');
         if (m) m.textContent = 'Sauvegarde effacée.';
-      }, 'danger', 'erase-confirm'));
-      row.appendChild(this._button('Annuler', () => this.showSettings({ storage, onToggleMute, onToggleShake, onErase, onBack }), 'primary', 'cancel'));
+      }, 'danger', 'erase-confirm')));
       box.appendChild(row);
+      this._keepClear(row.lastChild);
       this.current._onBack = () => this.showSettings({ storage, onToggleMute, onToggleShake, onErase, onBack });
-      if (!('ontouchstart' in window)) row.lastChild.focus();
+      if (!('ontouchstart' in window)) row.firstChild.focus();
     };
     this._show('settings', ov, { onBack });
   }
 
   // ---------------------------------------------------------------- pause
 
-  showPause({ run, player, onResume, onAbandon, onTitle, onToggleMute }) {
+  showPause({ run, player, canAbandon = true, onResume, onAbandon, onTitle, onToggleMute }) {
     const ov = el('div', 'ov ov-dim');
     const box = el('div', 'panel');
     const build = () => {
       box.replaceChildren();
       box.appendChild(el('h2', '', 'Pause'));
-      if (run && player) {
+      const settled = !!(run && run.over); // (never shown: a pause request during the death animation opens the summary)
+      if (run && player && !settled) {
         const bits = [player.depth > 0 ? `−${player.depth} m` : 'Au camp'];
         bits.push(`Sac ${run.bagCount}/${player.stats.bagCapacity}`);
         if (run.gold) bits.push(`${fmtN(run.gold)} or non banqué`);
@@ -305,7 +372,8 @@ export class UI {
         mute.firstChild.textContent = m ? 'Son : coupé' : 'Son : activé';
       }, '', 'mute');
       box.appendChild(mute);
-      box.appendChild(this._button('Recommencer l’expédition', confirm, '', 'abandon'));
+      // no abandon once the run is settled, nor in the Guardian's last breath (the victory is due)
+      if (canAbandon && !settled && !(run && run.bossDefeated)) box.appendChild(this._button('Recommencer l’expédition', confirm, '', 'abandon'));
       box.appendChild(this._button('Retour au titre', onTitle, 'minor', 'title'));
       ov._refresh = () => { mute.firstChild.textContent = this.game.audio.muted ? 'Son : coupé' : 'Son : activé'; };
       if (this.current === ov) this.current._onBack = onResume;
@@ -318,12 +386,13 @@ export class UI {
       let txt = 'L’expédition compte comme une mort et la mine sera régénérée.';
       if (loot) txt += ins > 0 ? ` Ton butin non banqué sera perdu (Bourse de secours : ${Math.round(ins * 100)} % conservés).` : ' Ton butin non banqué sera perdu.';
       box.appendChild(el('p', '', txt));
-      const row = el('div', 'row');
-      row.appendChild(this._button('Abandonner', onAbandon, 'danger', 'abandon-confirm'));
+      const row = el('div', 'row confirm');
       row.appendChild(this._button('Annuler', () => { build(); focusFirst(); }, 'primary', 'cancel'));
+      row.appendChild(this._arm(this._button('Abandonner', onAbandon, 'danger', 'abandon-confirm')));
       box.appendChild(row);
+      this._keepClear(row.lastChild);
       this.current._onBack = () => { build(); focusFirst(); };
-      if (!('ontouchstart' in window)) row.lastChild.focus();
+      if (!('ontouchstart' in window)) row.firstChild.focus();
     };
     const focusFirst = () => { if (!('ontouchstart' in window)) { const b = box.querySelector('button'); if (b) b.focus(); } };
     build();
@@ -383,8 +452,7 @@ export class UI {
         const buy = el('button', 'buy');
         buy.type = 'button';
         buy.dataset.buy = k;
-        buy.addEventListener('click', (e) => {
-          e.preventDefault();
+        this._bindPress(buy, () => {
           game.audio.unlock();
           const r = onBuy(k);
           if (r && r.ok) {
