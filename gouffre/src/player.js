@@ -27,6 +27,16 @@ export function baseStats() {
     reelSpeed: GRAPPLE.reelSpeed,
     lanternRadius: PLAYER.lanternRadius,
     bagCapacity: PLAYER.bagCapacity,
+    hookSpeed: GRAPPLE.hookSpeed,
+    insurance: 0,                      // Bourse de secours: share of the loot kept on death
+    // run relics (meta.RELICS) tweak these
+    airJumps: 0,                       // Double saut
+    glide: false,                      // Plume: hold jump to fall slowly
+    killHeal: 0,                       // Vampirisme: HP healed per kill
+    magnetMul: 1,                      // Aimant: pickup magnet radius multiplier
+    oreMul: 1, goldMul: 1,             // Avarice
+    regen: 0,                          // Cœur de troll: HP per second
+    firePick: false,                   // Pioche ardente (visual embers on strikes)
   };
 }
 
@@ -70,6 +80,7 @@ export class Player {
     this.digAssistT = 0;
     this.tooHardCd = 0;
     this.airTime = 0;
+    this.airJumpsLeft = 0; this.gliding = false; this.regenAcc = 0;
     this.dead = false; this.deadT = 0;
     this.anim = 'idle'; this.animT = 0; this.animFrame = 0;
     this.landSquash = 0;
@@ -115,6 +126,7 @@ export class Player {
     this.iframes -= dt; this.hurtT -= dt; this.digAssistT -= dt; this.tooHardCd -= dt;
     this.landSquash = Math.max(0, this.landSquash - dt);
 
+    if (this.onGround) this.airJumpsLeft = this.stats.airJumps; // Double saut refills on the ground
     const stunned = this.hurtT > PLAYER.hurtStun * 0.5;
     const moveX = stunned ? 0 : inp.moveX;
     if (moveX !== 0 && this.strikeT <= 0.05) this.facing = moveX > 0 ? 1 : -1;
@@ -124,8 +136,10 @@ export class Player {
 
     // jump (buffered)
     if (inp.pressed('jump')) this.jumpBufferT = PLAYER.jumpBuffer;
+    let jumpUsed = false;
     if (grapple.attached && this.jumpBufferT > 0) {
       if (!this.onGround) {
+        jumpUsed = true;
         grapple.release(true);
         this.jumpBufferT = 0;
         this.jumping = false;
@@ -166,9 +180,21 @@ export class Player {
       g.audio.play('jump');
       g.particles.spawn('dust', this.cx, this.feetY, { count: 4 });
     }
+    // Double saut (relic): a fresh press in mid-air, after the coyote window
+    else if (inp.pressed('jump') && !jumpUsed && this.airJumpsLeft > 0 && !this.onGround && this.coyoteT <= 0 && !grapple.attached && !stunned) {
+      this.airJumpsLeft--;
+      this.vy = -st.jumpVel * PLAYER.airJumpMul;
+      this.jumpBufferT = 0;
+      this.jumping = true;
+      g.audio.play('jump', { pitch: 1.35 });
+      g.particles.spawn('poof', this.cx, this.feetY, { count: 6, color: '#d8cdb0' });
+    }
     // variable jump height
     if (this.jumping && this.vy < 0 && !inp.held('jump')) { this.vy *= PLAYER.jumpCut; this.jumping = false; }
     if (this.vy >= 0) this.jumping = false;
+    // Plume (relic): holding jump while falling glides
+    this.gliding = st.glide && !this.onGround && this.vy > 0 && inp.held('jump') && !grapple.attached && !stunned;
+    if (this.gliding && this.vy > PLAYER.glideFall) this.vy = Math.max(PLAYER.glideFall, this.vy - PLAYER.gravity * 3 * dt);
 
     // rope velocity stage, move, rope position stage
     grapple.preMove(this, dt);
@@ -183,9 +209,16 @@ export class Player {
       if (!wasOnGround && this.airTime > 0.12) this._land(fallSpeed);
       this.coyoteT = PLAYER.coyoteTime;
       this.airTime = 0;
+      this.airJumpsLeft = st.airJumps;
     } else {
       this.airTime += dt;
     }
+    if (grapple.attached) this.airJumpsLeft = st.airJumps; // swinging refills the double jump
+    // Cœur de troll (relic): slow regeneration
+    if (st.regen > 0 && this.hp < st.maxHp) {
+      this.regenAcc += st.regen * dt;
+      if (this.regenAcc >= 1) { this.regenAcc -= 1; this.heal(1); }
+    } else this.regenAcc = 0;
 
     this._holeAssist(dt, moveX);
     this._hazards();
@@ -316,7 +349,15 @@ export class Player {
     // enemies first (the pickaxe is the weapon)
     const box = this.strikeBox(dir);
     const hits = g.enemies.damageInBox(box, st.attackDamage, this.cx, { dir, source: 'player' });
-    if (hits > 0) { g.hitStop(HIT_STOP.enemy); g.camera.shake(2, 0.1); }
+    if (hits > 0) {
+      g.hitStop(HIT_STOP.enemy);
+      g.camera.shake(2, 0.1);
+      // pogo: a downward strike on an enemy while airborne bounces the player up
+      if (dir === 'down' && !this.onGround && !this.grapple.attached) { this.vy = Math.min(this.vy, -PLAYER.pogoVel); this.jumping = false; }
+    }
+
+    // chests open with a strike too (or the contextual "Ouvrir" button)
+    if (g.entities && g.entities.hitChests) g.entities.hitChests(box);
 
     // then tiles
     const t = this.strikeTiles(dir);
@@ -338,6 +379,10 @@ export class Player {
       }
     }
     if (dir === 'down' && (hitAny || broke)) this.digAssistT = 0.6;
+    if (st.firePick && (hitAny || hits > 0)) {
+      const b = box;
+      g.particles.spawn('ember', b.x + b.w / 2, b.y + b.h / 2, { count: 5, spread: 8 });
+    }
     if (hitAny) { g.hitStop(HIT_STOP.tile); g.camera.shake(broke ? 1.6 : 0.8, 0.07); }
     if (tooHard && !hitAny) {
       const tx = t[0], ty = t[1];

@@ -27,9 +27,12 @@ export class Camera {
 
   _target() {
     const p = this.game.player;
+    // boss fight: frame the whole arena vertically (enemies.cameraFocusY), follow the player sideways
+    const en = this.game.enemies;
+    const focusY = en ? en.cameraFocusY : null;
     return {
       x: p.cx + this.lookX - this.viewW / 2,
-      y: p.cy + CAMERA.offsetY + this.lookY - this.viewH / 2,
+      y: focusY !== null && focusY !== undefined ? focusY - this.viewH / 2 : p.cy + CAMERA.offsetY + this.lookY - this.viewH / 2,
     };
   }
 

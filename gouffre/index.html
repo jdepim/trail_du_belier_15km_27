@@ -96,6 +96,108 @@
   .gbtn:active, .gbtn:focus-visible { transform: translateY(2px); box-shadow: 0 1px 0 #07040a; border-color: #ffe6a0; }
   .small { font-size: 12px; color: #a89ab8; letter-spacing: 0.08em; text-shadow: 0 1px 0 #000; }
   @media (hover: none) and (pointer: coarse) { .keys { display: none; } }
+  .gbtn { touch-action: manipulation; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 46px; }
+  .gbtn .sub { display: block; margin-top: 2px; font-size: 11px; letter-spacing: 0.06em; text-transform: none; color: #e8d6b0; opacity: 0.85; }
+  .gbtn.minor { font-size: 14px; min-height: 40px; padding: 7px 20px; background: linear-gradient(#281a2c, #140c18); border-color: #6a5238; }
+  .gbtn.danger { background: linear-gradient(#4a0a14, #22040a); border-color: #b3122e; color: #ffd0d8; }
+  .gbtn:disabled { opacity: 0.45; cursor: default; }
+  .panel h2.red { color: #ff7a8a; text-shadow: 0 2px 0 #3a0610, 0 0 18px rgba(179, 18, 46, 0.6); }
+  .panel .row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 4px; }
+  .panel .row .gbtn { min-width: 170px; }
+  .panel .notice { color: #ffb35c; font-size: 13px; }
+  .panel .msg { margin: 0; min-height: 1em; color: #bfe3a0; font-size: 13px; }
+  .panel.wide { max-width: min(94vw, 760px); width: 100%; }
+  .ui-notice {
+    position: absolute; top: calc(env(safe-area-inset-top) + 10px); left: 50%; transform: translateX(-50%); z-index: 6;
+    background: #2a0a12; border: 2px solid #b3122e; color: #ffd0d8; padding: 8px 16px; font-size: 14px; pointer-events: none;
+  }
+  canvas.pix { image-rendering: pixelated; display: block; flex: none; }
+  .ov { overflow: hidden; }
+
+  /* ---- death / victory */
+  .death .lead, .victory .lead { color: #e8d6c0; font-size: 16px; margin: 0; }
+  .death .cols { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; text-align: left; }
+  .death .col { background: rgba(5, 3, 10, 0.55); border: 1px solid #3a2a1a; padding: 8px 10px; min-width: 0; }
+  .death h3 { margin: 0 0 6px; font-weight: normal; font-size: 12px; letter-spacing: 0.24em; text-transform: uppercase; color: #a89ab8; }
+  .death .lost h3 { color: #ff8a9a; } .death .kept h3 { color: #bfe3a0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chips.center { justify-content: center; }
+  .chips.relics { margin-top: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; background: #150c14; border: 1px solid #4a3a2a; padding: 2px 7px 2px 4px; font-size: 13px; color: #d8cdb0; }
+  .chip.gold { color: #ffe08a; } .chip.relic { color: #e8c878; border-color: #6a5238; }
+  .death .lost .chip { text-decoration: line-through; text-decoration-color: rgba(224, 48, 78, 0.7); }
+  .death .none { color: #8a7a8a; font-size: 13px; font-style: italic; }
+  .death .k { margin: 0 0 4px; font-size: 14px; color: #c8bca8; display: flex; align-items: center; gap: 6px; }
+  .death .k.dim { color: #7a6a7a; font-size: 12px; } .death .k.big { color: #ffe08a; font-size: 17px; margin-top: 6px; }
+  .statline { font-size: 13px; color: #a89ab8; letter-spacing: 0.04em; }
+  .ov-gold { background: radial-gradient(ellipse at 50% 35%, rgba(90, 60, 10, 0.55), rgba(5, 3, 10, 0.94)); }
+  .victory { border-color: #d4a45a; box-shadow: 0 0 0 2px #0a0610, 0 0 0 4px #6a4a1a, 0 0 60px rgba(232, 200, 120, 0.25); align-items: center; }
+  .vstats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 14px; width: 100%; }
+  .vs { display: flex; flex-direction: column; background: rgba(5, 3, 10, 0.55); border: 1px solid #4a3a1a; padding: 5px 8px; }
+  .vk { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #a89ab8; }
+  .vv { font-size: 18px; color: #ffe08a; }
+
+  /* ---- the Forge */
+  .ov-forge { background: radial-gradient(ellipse at 50% 20%, rgba(90, 30, 10, 0.78), rgba(5, 3, 10, 0.95) 70%); align-items: stretch; }
+  .forge { width: 100%; max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; justify-content: center; padding: 8px 12px 6px; min-height: 0; }
+  .forge-head { display: flex; align-items: center; gap: 12px; padding: 0 2px 6px; border-bottom: 2px solid #3a2a1a; }
+  .forge-title { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+  .forge-title h2 { margin: 0; font-weight: normal; letter-spacing: 0.3em; text-transform: uppercase; color: #e8c878; font-size: 22px; text-shadow: 0 2px 0 #3a0610, 0 0 14px rgba(255, 140, 50, 0.45); white-space: nowrap; }
+  .gold-pill { position: relative; display: flex; align-items: center; gap: 7px; font-size: 20px; color: #ffe08a; background: #150c14; border: 2px solid #6a5238; padding: 3px 12px; min-height: 40px; }
+  .gold-pill .spent { position: absolute; right: 8px; top: 100%; color: #ff8a6a; font-size: 16px; animation: spent 0.9s ease-out forwards; pointer-events: none; }
+  @keyframes spent { from { transform: translateY(0); opacity: 1; } to { transform: translateY(14px); opacity: 0; } }
+  .gbtn.close { min-width: 0; padding: 6px 18px; font-size: 15px; min-height: 44px; }
+  .forge-grid {
+    flex: 0 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; overscroll-behavior: contain;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 7px 1px; align-content: start;
+  }
+  .card { display: grid; grid-template-columns: 46px 1fr auto; align-items: center; gap: 9px; min-height: 64px; padding: 5px 7px;
+    background: linear-gradient(#20142a, #110a17); border: 2px solid #4a3a2a; box-shadow: inset 0 1px 0 rgba(255, 220, 160, 0.08); }
+  .card.maxed { border-color: #6a5238; background: linear-gradient(#2a2010, #140c08); }
+  .card.flash { animation: cardflash 0.7s ease-out; }
+  @keyframes cardflash { 0% { box-shadow: 0 0 0 2px #fff0a0, 0 0 26px #e8a848; background: #5a3a10; } 100% { box-shadow: none; } }
+  .card .ic { width: 46px; height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; background: #0a060e; border: 1px solid #3a2a1a; }
+  .card .mid { min-width: 0; }
+  .card .mid { line-height: 1.22; }
+  .card .nm { display: flex; align-items: center; }
+  .card .nm-t { font-size: 14px; color: #e8c878; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pips { display: flex; gap: 3px; }
+  .pip { width: 5px; height: 5px; transform: rotate(45deg); background: #24141c; border: 1px solid #6a5238; }
+  .pip.on { background: #e8c878; border-color: #fff0a0; box-shadow: 0 0 4px rgba(255, 220, 120, 0.6); }
+  .pip.new { animation: pip 0.6s ease-out; }
+  @keyframes pip { 0% { transform: rotate(45deg) scale(2.2); background: #ffffff; } 100% { transform: rotate(45deg) scale(1); } }
+  .card .ds { display: none; font-size: 12px; color: #8a7e96; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (min-height: 520px) { .card .ds { display: block; } .card { min-height: 74px; } }
+  .card .fx { font-size: 13px; color: #b8aa98; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .nx { font-size: 13px; color: #bfe3a0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card.maxed .nx { color: #e8c878; font-style: italic; }
+  .buy {
+    font: inherit; min-width: 92px; min-height: 50px; padding: 3px 8px; cursor: pointer; outline: none; touch-action: manipulation;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    color: #ffe08a; background: linear-gradient(#6a4210, #2e1a06); border: 2px solid #d4a45a;
+    box-shadow: inset 0 1px 0 rgba(255, 230, 160, 0.3), 0 3px 0 #07040a;
+  }
+  .buy .b1 { display: flex; align-items: center; gap: 4px; font-size: 16px; }
+  .buy .b2 { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #f2e6c8; opacity: 0.8; }
+  .buy:disabled { cursor: default; color: #7a6a5a; background: #150c10; border-color: #3a2a1a; box-shadow: none; }
+  .buy:disabled .b2 { color: #8a6a6a; }
+  .buy:active:not(:disabled), .buy:focus-visible { transform: translateY(2px); box-shadow: 0 1px 0 #07040a; border-color: #ffe6a0; }
+  .card.maxed .buy .b1 { color: #e8c878; letter-spacing: 0.2em; }
+  .forge-foot { font-size: 12px; color: #a89ab8; text-align: center; padding-top: 4px; min-height: 18px; letter-spacing: 0.03em; }
+  .forge-foot.ok { color: #bfe3a0; }
+  @media (max-height: 420px) {
+    .panel { padding: 12px 22px 14px; gap: 8px; }
+    .panel h2 { font-size: 19px; margin-bottom: 0; }
+    .panel p { margin-bottom: 2px; }
+    .gbtn { padding: 7px 22px; min-height: 42px; font-size: 16px; }
+    .gbtn.minor { min-height: 36px; padding: 5px 18px; font-size: 13px; }
+    .death .lead, .victory .lead { font-size: 14px; }
+    .vs { padding: 3px 8px; } .vv { font-size: 16px; }
+    .card { min-height: 56px; padding: 3px 7px; } .buy { min-height: 46px; }
+    .card .fx, .card .nx { font-size: 12px; } .card .nm-t { font-size: 13px; }
+    .forge-title h2 { font-size: 18px; } .gold-pill { font-size: 18px; min-height: 38px; }
+  }
+  @media (max-width: 560px) { .forge-grid { grid-template-columns: 1fr; } }
 
   #rotate {
     display: none; position: fixed; inset: 0; z-index: 10; background: #05030a; color: #e8c878;

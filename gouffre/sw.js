@@ -2,7 +2,7 @@
 // Bump VERSION on every release (old caches are deleted on activate).
 // Any same-origin GET is cached on first fetch, so new files need no list update;
 // CORE is only the set pre-cached at install.
-const VERSION = 'gouffre-v1';
+const VERSION = 'gouffre-v3';
 const CORE = [
   './', './index.html', './manifest.webmanifest', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png',
   './src/main.js', './src/config.js', './src/rng.js', './src/tiles.js', './src/world.js', './src/worldgen.js',

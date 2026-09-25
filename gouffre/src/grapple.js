@@ -231,7 +231,7 @@ export class Grapple {
       return;
     }
     if (this.state === 'flying') {
-      const step = GRAPPLE.hookSpeed * dt;
+      const step = (this.player.stats.hookSpeed || GRAPPLE.hookSpeed) * dt;
       const remaining = this.range - this.travelled;
       const hit = raycast(g.world, this.hookX, this.hookY, this.dirX, this.dirY, Math.min(step, remaining));
       if (hit) { this._attach(hit); return; }

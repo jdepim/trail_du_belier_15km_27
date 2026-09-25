@@ -15,10 +15,10 @@
 // camera think and move (ENEMY_ACTIVE); the others sleep where they are.
 // Depth scaling: hp × (1 + d/60), dmg × (1 + d/80), × 1.5 in NG+ (game.save.ngPlus / game.run.ngPlus).
 import {
-  TILE, SURFACE_Y, WORLD_W, BEDROCK_COLS, LAYERS, layerAtDepth, WORLDGEN, ENEMY_SCALING, ENEMY_STATS,
+  TILE, SURFACE_Y, WORLD_W, BEDROCK_COLS, layerAtDepth, WORLDGEN, ENEMY_SCALING, ENEMY_STATS,
   ENEMY_AI as AI, ENEMY_SPAWNING as SP, ENEMY_ACTIVE, ENEMY_SPAWN_RULES, DROPS, BOSS,
 } from './config.js';
-import { TILE_ID, SOLID } from './tiles.js';
+import { TILES, TILE_ID, SOLID } from './tiles.js';
 import { moveAndCollide } from './physics.js';
 import { drawSprite } from './sprites.js';
 import { createRng } from './rng.js';
@@ -28,14 +28,32 @@ const NAMES = {
   imp: 'Diablotin de feu', golem: 'Golem', guardian: "Le Gardien de l'Abysse",
 };
 
-/** Base definitions per enemy key (stats from config.ENEMY_STATS). */
+/**
+ * Base definitions per enemy key (stats from config.ENEMY_STATS). Sprite names of
+ * every variant are precomputed so drawing never builds strings:
+ * spr = [normal, hit flash, telegraph tint], alt = same for the alternate look
+ * (bat hanging asleep, Guardian enraged).
+ */
 export const ENEMY_DEFS = {};
-for (const key of Object.keys(ENEMY_STATS)) ENEMY_DEFS[key] = { key, name: NAMES[key], sprite: 'enemy_' + key, ...ENEMY_STATS[key] };
+for (const key of Object.keys(ENEMY_STATS)) {
+  const sprite = 'enemy_' + key;
+  const altBase = key === 'bat' ? 'enemy_bat_hang' : key === 'guardian' ? 'enemy_guardian_rage' : sprite;
+  ENEMY_DEFS[key] = {
+    key, name: NAMES[key], sprite, ...ENEMY_STATS[key],
+    spr: [sprite, sprite + '_flash', sprite + '_tele'],
+    alt: [altBase, altBase + '_flash', altBase + '_tele'],
+  };
+}
 
-/** Depth scaling from DESIGN §6: hp × (1 + d/60), dmg × (1 + d/80), × 1.5 in NG+. */
-export function scaleStat(base, depth, kind, ngPlus = false) {
-  const k = kind === 'hp' ? 1 + depth * ENEMY_SCALING.hpPerM : 1 + depth * ENEMY_SCALING.dmgPerM;
-  return base * k * (ngPlus ? ENEMY_SCALING.ngPlusMul : 1);
+/**
+ * Depth scaling from DESIGN §6: hp × (1 + d/60), dmg × (1 + d/80), × 1.5 in NG+.
+ * ngPlus = NG+ level (true = 1): × (1 + 0.5 × level), so NG+2 = × 2.
+ */
+export function scaleStat(base, depth, kind, ngPlus = 0) {
+  const d = Math.max(0, depth);
+  const k = kind === 'hp' ? 1 + d * ENEMY_SCALING.hpPerM : 1 + d * ENEMY_SCALING.dmgPerM;
+  const lv = ngPlus === true ? 1 : Math.max(0, Number(ngPlus) || 0);
+  return base * k * (1 + (ENEMY_SCALING.ngPlusMul - 1) * lv);
 }
 
 // sprites drawn from the feet (bottom-centre); the others from the hitbox centre
@@ -51,6 +69,7 @@ const HIT_PITCH = { slime: 0.8, bat: 1.4, skeleton: 1.2, spider: 1.25, ghost: 1.
 // windup states (drawn with the red "tele" tint blinking)
 const TELE = { windup: 1, charge: 1, shake: 1, slam_wind: 1, swipe_wind: 1, summon_wind: 1, rain_wind: 1, charge_wind: 1 };
 
+const CAMP_CEIL = (SURFACE_Y + 2) * TILE; // flyers stay below this line
 const FIRE_LIGHT = [255, 120, 40];
 const GHOST_LIGHT = [120, 170, 255];
 const BOSS_LIGHT = [255, 60, 90];
@@ -178,7 +197,7 @@ export class EnemyManager {
     this.list = [];          // live enemies (dying ones included)
     this.pool = [];          // recycled Enemy objects
     this.projectiles = [];   // fixed pool of enemy projectiles
-    for (let i = 0; i < MAX_PROJ; i++) this.projectiles.push({ active: false, type: '', x: 0, y: 0, vx: 0, vy: 0, w: 6, h: 6, dmg: 0, t: 0, life: 0, grav: 0, px: 0, py: 0 });
+    for (let i = 0; i < MAX_PROJ; i++) this.projectiles.push({ active: false, type: '', x: 0, y: 0, vx: 0, vy: 0, w: 6, h: 6, dmg: 0, t: 0, life: 0, grav: 0, px: 0, py: 0, floorY: 0 });
     this.spawns = [];        // spawn records from worldgen
     this.boss = null;
     this.bossDefeated = false;
@@ -187,15 +206,18 @@ export class EnemyManager {
     this.respawnT = 6;
     this.rng = createRng(1);
     this.time = 0;
+    this.activeCount = 0;     // enemies that thought during the last tick
     this._res = { onGround: false, hitCeiling: false, hitLeft: false, hitRight: false };
     this._spot = { key: null, x: 0, y: 0, anchor: 'floor', tx: 0, ty: 0 };
     this._view = { x: 0, y: 0, w: 0, h: 0 };
     this._bar = { name: '', hp: 0, maxHp: 1, phase: 0, reveal: 0, flash: 0, dying: false };
   }
 
+  /** NG+ level of the current run (copied from save.ngPlus when the mine is made). */
   get ngPlus() {
     const g = this.game;
-    return !!((g.run && g.run.ngPlus) || (g.save && g.save.ngPlus));
+    if (g.run && g.run.ngPlus !== undefined) return g.run.ngPlus === true ? 1 : Number(g.run.ngPlus) || 0;
+    return g.save ? Number(g.save.ngPlus === true ? 1 : g.save.ngPlus) || 0 : 0;
   }
 
   /** New run / new world: take the worldgen spawn list and instantiate it. */
@@ -276,17 +298,20 @@ export class EnemyManager {
     const rx = cam.viewW * ENEMY_ACTIVE.rangeX, ry = cam.viewH * ENEMY_ACTIVE.rangeY;
     const far = cam.viewW * SP.despawnScreens;
     const list = this.list;
+    let nActive = 0;
     for (let i = 0; i < list.length; i++) {
       const e = list[i];
       e.prevX = e.x; e.prevY = e.y;
       if (!e.alive) continue;
       const ex = e.x + e.w / 2, ey = e.y + e.h / 2;
       const adx = Math.abs(ex - ccx), ady = Math.abs(ey - ccy);
-      e.active = (adx < rx && ady < ry) || (e === this.boss && e.state !== 'dormant');
+      // the boss thinks whenever it fights, or when the player is inside its arena
+      e.active = (adx < rx && ady < ry) || (e === this.boss && (e.state !== 'dormant' || this.playerInArena()));
       if (!e.active) {
         if (e.respawned && (adx > far || ady > far)) e.alive = false; // recycle far respawns
         continue;
       }
+      nActive++;
       this._think(e, dt);
     }
     for (let i = list.length - 1; i >= 0; i--) {
@@ -297,6 +322,7 @@ export class EnemyManager {
       if (e === this.boss) this.boss = null;
       this.pool.push(e);
     }
+    this.activeCount = nActive;
     this._updateProjectiles(dt);
     this._respawn(dt);
   }
@@ -319,6 +345,8 @@ export class EnemyManager {
       case 'golem': this._golem(e, dt); break;
       default: break;
     }
+    // flyers never follow the player up into the camp (the surface is safe ground)
+    if (FLYING[e.key] && e.y < CAMP_CEIL) { e.y = CAMP_CEIL; if (e.vy < 0) e.vy = 0; }
     // walkers that stumble into lava burn
     if (!FLYING[e.key] && this.game.world.rectHazard(e.x + 1, e.y + 2, e.w - 2, e.h - 2) > 0) {
       e.noDrops = true;
@@ -405,6 +433,7 @@ export class EnemyManager {
         if (this._onScreen(e)) g.audio.play('squish', { pitch: 0.9 + this.rng.next() * 0.3 });
       }
     } else if (!e.onGround && e.state !== 'air' && e.stun <= 0) this._set(e, 'air');
+    else if (e.onGround && e.stun > 0) e.vx = approach(e.vx, 0, 500 * dt);
     const vx0 = e.vx;
     const res = this._move(e, dt);
     if (res.hitLeft || res.hitRight) e.vx = -vx0 * 0.3;
@@ -451,7 +480,7 @@ export class EnemyManager {
       }
     }
     const res = this._move(e, dt);
-    if (res.hitLeft || res.hitRight) e.vy -= 60 * dt * 60 * 0.1;
+    if (res.hitLeft || res.hitRight) e.vy -= 360 * dt; // slide up along walls instead of sticking
     if (res.hitCeiling && e.state === 'flee') this._set(e, 'fly');
   }
 
@@ -696,10 +725,7 @@ export class EnemyManager {
     return p.y >= (a.outer.y0 + 2) * TILE && p.feetY <= (a.y1 + 1) * TILE + 1 && p.cx >= a.x0 * TILE && p.cx <= (a.x1 + 1) * TILE;
   }
 
-  _bossBounds(e) {
-    const a = this.arena;
-    return { min: a.x0 * TILE + 2, max: (a.x1 + 1) * TILE - e.w - 2 };
-  }
+
 
   setGates(sealed) {
     const a = this.arena, g = this.game;
@@ -740,7 +766,7 @@ export class EnemyManager {
     if (!a) return;
     const floorY = (a.y1 + 1) * TILE;
     e.y = floorY - e.h; e.vy = 0;
-    const bb = this._bossBounds(e);
+    const bMin = a.x0 * TILE + 2, bMax = (a.x1 + 1) * TILE - e.w - 2; // walkable span
     const ex = e.x + e.w / 2;
     const dx = p.cx - ex;
     const ph = e.phase;
@@ -798,8 +824,8 @@ export class EnemyManager {
         e.vx = e.facing * BOSS.chargeSpeed;
         e.x += e.vx * dt;
         if (Math.floor(e.stateT * 14) !== Math.floor((e.stateT - dt) * 14)) g.particles.spawn('dust', ex - e.facing * 18, floorY, { count: 3 });
-        if (e.x <= bb.min || e.x >= bb.max || e.stateT > 5) {
-          e.x = Math.max(bb.min, Math.min(bb.max, e.x));
+        if (e.x <= bMin || e.x >= bMax || e.stateT > 5) {
+          e.x = Math.max(bMin, Math.min(bMax, e.x));
           this._set(e, 'stun');
           e.vx = 0;
           g.camera.shake(6, 0.5);
@@ -819,7 +845,7 @@ export class EnemyManager {
         const spd = BOSS.walkSpeed[ph];
         if (Math.abs(dx) > 6) e.facing = dx > 0 ? 1 : -1;
         e.vx = approach(e.vx, Math.abs(dx) > 34 ? e.facing * spd : 0, 220 * dt);
-        e.x = Math.max(bb.min, Math.min(bb.max, e.x + e.vx * dt));
+        e.x = Math.max(bMin, Math.min(bMax, e.x + e.vx * dt));
         if (e.cd <= 0 && !p.dead) this._bossChoose(e, dx);
       }
     }
@@ -854,7 +880,7 @@ export class EnemyManager {
     const ex = e.x + e.w / 2;
     g.camera.shake(5, 0.4);
     g.audio.play('slam', {});
-    for (const s of [-1, 1]) {
+    for (let s = -1; s <= 1; s += 2) {
       g.particles.spawn('debris', ex + s * 22, floorY - 2, { tileId: TILE_ID.ARENA, count: 8 });
       g.particles.spawn('dust', ex + s * 22, floorY, { count: 5 });
       this.fire('shock', ex + s * 26, floorY - 7, s * BOSS.shockSpeed, 0, Math.round(e.projDmg * BOSS.shockDmgMul));
@@ -870,7 +896,7 @@ export class EnemyManager {
     const ex = e.x + e.w / 2;
     g.audio.play('roar', { pitch: 1.2, volume: 0.7 });
     let made = 0;
-    for (const s of [-1, 1]) {
+    for (let s = -1; s <= 1; s += 2) {
       if (made >= room) break;
       const x = Math.max((a.x0 + 2) * TILE, Math.min((a.x1 - 1) * TILE, ex + s * 110));
       const m = this.spawn('bat', x, ceilY + 8, { anchor: 'air', minion: true, state: 'fly', depth: e.depth });
@@ -941,6 +967,13 @@ export class EnemyManager {
     if (g.onBossDefeated) g.onBossDefeated();
   }
 
+  /** World y the camera centres on during the boss fight (whole arena in view), or null. */
+  get cameraFocusY() {
+    const b = this.boss, a = this.arena;
+    if (!a || !this.gatesSealed || !b || !b.alive || !this.playerInArena()) return null;
+    return ((a.y0 + a.y1 + 2) * TILE) / 2;
+  }
+
   /** HUD data for the boss bar, or null when no fight is on (object reused). */
   get bossBar() {
     const b = this.boss;
@@ -990,8 +1023,10 @@ export class EnemyManager {
     if (!e.alive || this._invulnerable(e)) return false;
     const g = this.game;
     const ex = e.x + e.w / 2, ey = e.y + e.h / 2;
+    dmg = Math.max(1, Math.round(dmg));
     e.hp -= dmg;
     e.flash = 0.13;
+    if (g.entities && g.entities.popup) g.entities.popup(String(dmg), ex, e.y - 2, '#f2e6c8');
     if (e.key === 'guardian') {
       g.particles.spawn('blood', ex + (fromX === null ? 0 : Math.sign(fromX - ex) * e.w * 0.35), ey - 6, { count: 8, color: GORE.guardian });
       g.particles.spawn('spark', ex, ey - 6, { count: 3 });
@@ -1016,6 +1051,7 @@ export class EnemyManager {
     if (e.state === 'sleep') this._set(e, 'fly');
     if (e.state === 'hang' || e.state === 'shake') { this._set(e, 'drop'); }
     if (e.state === 'windup' && e.key === 'skeleton') this._set(e, 'walk'); // interrupts the throw
+    if (e.state === 'charge' && e.key === 'imp') { this._set(e, 'fly'); e.cd = 0.8; } // snuffs the fireball
     g.particles.spawn('blood', ex, ey, { count: 7, color: GORE[e.key] });
     g.audio.play('enemy_hit', { pitch: HIT_PITCH[e.key] || 1 });
     if (e.hp <= 0) this.kill(e);
@@ -1030,6 +1066,7 @@ export class EnemyManager {
     if (e.key === 'guardian') {
       this._set(e, 'dying');
       e.boomT = 0;
+      this._lifeSteal(e);
       for (const pr of this.projectiles) if (pr.active && (pr.type === 'warn' || pr.type === 'shock')) pr.active = false;
       g.audio.play('roar', { pitch: 0.7 });
       g.hitStop(0.2);
@@ -1037,9 +1074,22 @@ export class EnemyManager {
     }
     e.dying = 0.1;
     e.vx *= 0.3;
+    this._lifeSteal(e);
     g.hitStop(AI.killHitStop);
     g.camera.shake(e.key === 'golem' ? 4 : 2.2, 0.16);
     if (g.run && !e.minion) g.run.kills = (g.run.kills || 0) + 1;
+  }
+
+  /** Vampirisme relic: the player heals on every kill (not on summoned minions). */
+  _lifeSteal(e) {
+    const g = this.game, p = g.player;
+    const heal = p && p.stats ? p.stats.killHeal : 0;
+    if (!(heal > 0) || p.dead || e.minion) return;
+    const n = p.heal(heal);
+    if (n > 0 && g.entities && g.entities.popup) {
+      g.entities.popup('+' + n + ' PV', p.cx, p.y - 10, '#ff5a7a');
+      g.particles.spawn('blood', e.x + e.w / 2, e.y + e.h / 2, { count: 6, color: '#ff3a5a' });
+    }
   }
 
   _burst(e) {
@@ -1075,6 +1125,7 @@ export class EnemyManager {
     for (let i = 0; i < this.projectiles.length; i++) if (!this.projectiles[i].active) { pr = this.projectiles[i]; break; }
     if (!pr) return null;
     pr.active = true; pr.type = type; pr.x = x; pr.y = y; pr.px = x; pr.py = y; pr.vx = vx; pr.vy = vy; pr.dmg = dmg; pr.t = 0; pr.life = life;
+    pr.floorY = this.arena ? (this.arena.y1 + 1) * TILE : y + 150;
     switch (type) {
       case 'bone': pr.w = 6; pr.h = 6; pr.grav = AI.skeleton.boneGrav; break;
       case 'fireball': pr.w = 6; pr.h = 6; pr.grav = 0; break;
@@ -1119,7 +1170,12 @@ export class EnemyManager {
         if (world.isSolid(Math.floor(ahead / TILE), Math.floor(pr.y / TILE)) || !world.isSolid(Math.floor(pr.x / TILE), tyFeet)) { this._killProj(pr); continue; }
         if (Math.floor(pr.t * 20) !== Math.floor((pr.t - dt) * 20)) g.particles.spawn('dust', pr.x, pr.y + pr.h / 2, { count: 1 });
       } else if (world.isSolid(Math.floor(pr.x / TILE), Math.floor(pr.y / TILE))) {
-        if (pr.type === 'fireball' || pr.type === 'meteor') { pr.x -= pr.vx * dt; pr.y -= pr.vy * dt; }
+        if (pr.type === 'fireball' || pr.type === 'meteor') {
+          // fire burns soft soil (dirt, grass) it hits; rock just stops it
+          const tx = Math.floor(pr.x / TILE), ty = Math.floor(pr.y / TILE), id = world.get(tx, ty);
+          if (TILES[id].hp <= 1 && TILES[id].tier === 0) { world.set(tx, ty, TILE_ID.AIR); if (g.tileBroken) g.tileBroken(tx, ty, id, 'fire'); }
+          pr.x -= pr.vx * dt; pr.y -= pr.vy * dt;
+        }
         this._killProj(pr);
         continue;
       } else if (pr.type === 'fireball' && Math.floor(pr.t * 30) !== Math.floor((pr.t - dt) * 30)) {
@@ -1243,10 +1299,13 @@ export class EnemyManager {
         case 'warn': {
           const k = Math.min(1, pr.t / Math.max(0.01, pr.life));
           if (Math.floor(pr.t * (6 + k * 14)) % 2 === 0 || k > 0.8) drawSprite(ctx, 'fx_warn', Math.floor(pr.t * 8), x, y, false);
-          // column hint on the floor below
-          ctx.globalAlpha = 0.12 + 0.25 * k;
+          // column hint down to the floor + a pulsing target mark where it lands
+          const fy = Math.round(pr.floorY) - camY;
+          ctx.globalAlpha = 0.1 + 0.22 * k;
           ctx.fillStyle = '#ff5030';
-          ctx.fillRect(x - 3, y + 6, 1, 150); ctx.fillRect(x + 3, y + 6, 1, 150);
+          ctx.fillRect(x - 3, y + 6, 1, fy - y - 6); ctx.fillRect(x + 3, y + 6, 1, fy - y - 6);
+          ctx.globalAlpha = 0.35 + 0.5 * k * (Math.floor(pr.t * 12) % 2 ? 1 : 0.6);
+          ctx.fillRect(x - 4, fy - 1, 9, 1); ctx.fillRect(x - 2, fy - 2, 5, 1);
           ctx.globalAlpha = 1;
           break;
         }
@@ -1259,9 +1318,7 @@ export class EnemyManager {
     const flip = e.facing < 0;
     const fx = sx + e.w / 2;
     const fy = FEET[e.key] ? sy + e.h : sy + e.h / 2;
-    let name = e.def.sprite;
-    if (e.key === 'bat' && (e.state === 'sleep' || e.state === 'wake')) name = 'enemy_bat_hang';
-    if (e.key === 'guardian' && e.phase >= 2) name = 'enemy_guardian_rage';
+    const names = (e.key === 'bat' && (e.state === 'sleep' || e.state === 'wake')) || (e.key === 'guardian' && e.phase >= 2) ? e.def.alt : e.def.spr;
     const frame = this._frame(e);
     // spider thread
     if (e.key === 'spider' && (e.state === 'hang' || e.state === 'shake' || (e.state === 'drop' && e.stateT < 0.12))) {
@@ -1271,20 +1328,20 @@ export class EnemyManager {
       ctx.fillRect(Math.round(fx), top, 1, Math.max(0, Math.round(fy - 3) - top));
       ctx.globalAlpha = 1;
     }
-    let variant = '';
-    if (e.flash > 0 || e.dying > 0) variant = '_flash';
-    else if (TELE[e.state] && Math.floor(e.stateT * 14) % 2 === 0) variant = '_tele';
+    let variant = 0; // 0 normal, 1 hit flash, 2 telegraph tint
+    if (e.flash > 0 || e.dying > 0) variant = 1;
+    else if (TELE[e.state] && Math.floor(e.stateT * 14) % 2 === 0) variant = 2;
     let a = 1;
     if (e.key === 'ghost') a = e.alpha;
     let yOff = 0;
     if (e.key === 'guardian' && e.state === 'dying') {
       a = Math.max(0, 1 - Math.max(0, e.stateT - BOSS.deathTime * 0.5) / (BOSS.deathTime * 0.5));
       yOff = Math.round(Math.max(0, e.stateT - 1) * 6);
-      if (Math.floor(e.stateT * 30) % 2) variant = '_flash';
+      if (Math.floor(e.stateT * 30) % 2) variant = 1;
     }
     if (e.key === 'guardian' && (e.state === 'stun')) yOff = 1;
     if (a < 1) ctx.globalAlpha = a;
-    drawSprite(ctx, name + variant, frame, fx, fy + yOff, flip);
+    drawSprite(ctx, names[variant], frame, fx, fy + yOff, flip);
     if (a < 1) ctx.globalAlpha = 1;
   }
 
@@ -1317,4 +1374,3 @@ export class EnemyManager {
   }
 }
 
-export { LAYERS };

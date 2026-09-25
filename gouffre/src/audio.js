@@ -5,6 +5,7 @@
 //      audio.setLayer(index) ; audio.suspend() / audio.resume()
 // Sounds: jump land swing hit(material) break(material) clink pickup hurt enemy_hit
 //         enemy_death grapple_fire grapple_attach grapple_release bank death buy ui lava chest
+//         coin heal squish bat telegraph throw spider fireball charge fizz roar slam gate boss_hit boss_death
 import { MUTE_KEY } from './config.js';
 
 const LAYER_ROOTS = [55, 49, 46.25, 41.2, 36.7]; // A1, G1, F#1, E1, D1
@@ -223,6 +224,30 @@ const SFX = {
   ui(a, v) { a._tone({ type: 'triangle', f0: 660, dur: 0.05, vol: 0.08 * v }); },
   lava(a, v) { a._noise({ dur: 0.35, vol: 0.22 * v, type: 'bandpass', f0: 3000, f1: 800, q: 0.8 }); },
   chest(a, v) { a._tone({ type: 'triangle', f0: 523, dur: 0.1, vol: 0.1 * v }); a._tone({ type: 'triangle', f0: 659, dur: 0.1, vol: 0.1 * v, delay: 0.1 }); a._tone({ type: 'triangle', f0: 784, dur: 0.3, vol: 0.1 * v, delay: 0.2 }); },
+  // ---- enemies, combat, boss, pickups (step 2a)
+  coin(a, v, p) { a._tone({ type: 'square', f0: 1568 * p, dur: 0.04, vol: 0.05 * v }); a._tone({ type: 'square', f0: 2093 * p, dur: 0.1, vol: 0.05 * v, delay: 0.035 }); },
+  heal(a, v) { [523, 659, 784, 1047].forEach((f, i) => a._tone({ type: 'triangle', f0: f, dur: 0.12, vol: 0.08 * v, delay: i * 0.05 })); },
+  squish(a, v, p) { a._tone({ type: 'sine', f0: 180 * p, f1: 420 * p, dur: 0.09, vol: 0.12 * v }); a._noise({ dur: 0.06, vol: 0.08 * v, f0: 600, f1: 250 }); },
+  bat(a, v) { a._tone({ type: 'square', f0: 2400, f1: 1800, dur: 0.05, vol: 0.03 * v }); a._tone({ type: 'square', f0: 2600, f1: 2000, dur: 0.05, vol: 0.03 * v, delay: 0.08 }); },
+  telegraph(a, v, p) { a._tone({ type: 'sawtooth', f0: 330 * p, f1: 520 * p, dur: 0.16, vol: 0.05 * v }); a._tone({ type: 'sine', f0: 660 * p, dur: 0.12, vol: 0.04 * v, delay: 0.05 }); },
+  throw(a, v) { a._noise({ dur: 0.12, vol: 0.1 * v, type: 'bandpass', f0: 700, f1: 1800, q: 1.5 }); },
+  spider(a, v) { a._noise({ dur: 0.15, vol: 0.12 * v, type: 'highpass', f0: 2500, f1: 5000 }); a._tone({ type: 'square', f0: 900, f1: 1400, dur: 0.08, vol: 0.03 * v }); },
+  fireball(a, v, p) { a._noise({ dur: 0.3, vol: 0.18 * v, type: 'lowpass', f0: 1800 * p, f1: 300, q: 2 }); a._tone({ type: 'sawtooth', f0: 160 * p, f1: 80, dur: 0.25, vol: 0.06 * v }); },
+  charge(a, v) { a._tone({ type: 'sine', f0: 200, f1: 900, dur: 0.5, vol: 0.05 * v, a: 0.2 }); a._noise({ dur: 0.5, vol: 0.06 * v, type: 'bandpass', f0: 800, f1: 2500, q: 3, a: 0.2 }); },
+  fizz(a, v, p) { a._noise({ dur: 0.18, vol: 0.14 * v, type: 'highpass', f0: 2500 * p, f1: 900 }); },
+  roar(a, v, p) {
+    a._tone({ type: 'sawtooth', f0: 95 * p, f1: 55 * p, dur: 1.0, vol: 0.12 * v, a: 0.08 });
+    a._tone({ type: 'sawtooth', f0: 142 * p, f1: 70 * p, dur: 0.9, vol: 0.07 * v, a: 0.1 });
+    a._noise({ dur: 0.9, vol: 0.14 * v, type: 'bandpass', f0: 500 * p, f1: 220, q: 1.2, a: 0.08 });
+  },
+  slam(a, v) { a._tone({ type: 'sine', f0: 70, f1: 30, dur: 0.4, vol: 0.28 * v }); a._noise({ dur: 0.35, vol: 0.3 * v, f0: 900, f1: 90 }); },
+  gate(a, v) { a._noise({ dur: 0.6, vol: 0.14 * v, type: 'bandpass', f0: 1200, f1: 500, q: 4 }); a._tone({ type: 'triangle', f0: 180, f1: 120, dur: 0.5, vol: 0.12 * v }); a._tone({ type: 'sine', f0: 60, dur: 0.3, vol: 0.2 * v, delay: 0.45 }); },
+  boss_hit(a, v, p) { a._noise({ dur: 0.1, vol: 0.22 * v, type: 'bandpass', f0: 700 * p, q: 1.5 }); a._tone({ type: 'square', f0: 140 * p, f1: 70, dur: 0.12, vol: 0.08 * v }); },
+  boss_death(a, v) {
+    a._tone({ type: 'sawtooth', f0: 110, f1: 30, dur: 2.2, vol: 0.14 * v, a: 0.05 });
+    a._noise({ dur: 1.8, vol: 0.3 * v, f0: 2500, f1: 60, a: 0.02 });
+    [392, 494, 587, 784].forEach((f, i) => a._tone({ type: 'triangle', f0: f, dur: 0.9, vol: 0.06 * v, delay: 1.2 + i * 0.14 }));
+  },
 };
 
 export function createAudio() { return new AudioSystem(); }

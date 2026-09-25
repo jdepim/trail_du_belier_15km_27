@@ -253,3 +253,51 @@ Précisions et ajouts compatibles avec le contrat ci-dessus (détails : `NOTES-c
   privés de support (`World.clearDetachedDeco`). Invariant de génération : la lave ne touche jamais le vide
   sur les côtés ni dessous.
 
+## 14 bis. Notes d'implémentation (étape 2a — ennemis, combat, boss)
+
+Détails et APIs : `NOTES-core.md`, section « Enemies & combat ».
+- Réglages centralisés dans `config.js` : `ENEMY_STATS` (stats de base, hitbox, or, résistance au recul),
+  `ENEMY_AI` (comportements), `ENEMY_SPAWNING` (réapparition : intervalle et plafond local par couche, plafond
+  global 72), `ENEMY_ACTIVE` (zone active ≈ 1,25 largeur × 1,5 hauteur d'écran autour de la caméra), `DROPS`, `BOSS`.
+  Équilibrage : couche 1 douce (gelée 2-3 coups, ~6 dégâts), chaque couche ≈ ×1,5-2 en PV et dégâts moyens ;
+  le Gardien ≈ 830 PV (150 de base × profondeur). NG+ lu dans `run.ngPlus` (copié de `save.ngPlus`).
+- Nouvelle tuile `gate` (« Herse du Cœur », indestructible) : scelle l'entrée de l'arène pendant le combat.
+- Les pièces vont **directement** dans l'or de run (`run.gold`) ; les cœurs ne sont ramassés (et aimantés) que si
+  le joueur est blessé ; le cristal de vie libère un cœur (20 PV) au lieu de soigner instantanément.
+- Ajouts de « juice » : chiffres de dégâts flottants, rebond (*pogo*) quand une frappe vers le bas touche un
+  ennemi en l'air, flash blanc à l'impact, télégraphes rouges clignotants avant chaque attaque ennemie.
+- Les ennemis volants ne remontent pas dans le camp (zone sûre). Les boules de feu brûlent la terre / l'herbe.
+- Boss : 3 phases (66 % / 33 %), transitions invulnérables ; phase 1 griffe + onde de choc au sol, phase 2
+  double onde + invocation de chauves-souris, phase 3 (enragé) pluie de feu signalée + charge + squelettes.
+  La caméra cadre toute l'arène pendant le combat ; la barre de vie (nom + crans de phase) est en haut au centre.
+  À sa mort : séquence d'explosions, trésor, herses rouvertes, puis `game.onBossDefeated()` (l'étape 2b y
+  branche l'écran de victoire ; pour l'instant bannière + toast).
+
+## 14 ter. Notes d'implémentation (étape 2b — économie & boucle méta)
+
+Détails, tableaux et APIs : `NOTES-core.md`, section « Economy & meta loop ». Écarts et précisions :
+- **Sauvegarde** : la clé reste `gouffre.save.v1`, le format interne passe en `version: 2` (migration depuis la v1).
+  `ngPlus` devient un **niveau** (NG+ n : ennemis × (1 + 0,5 n), donc × 1,5 en NG+1 comme prévu) ; statistiques
+  ajoutées (`trips`, `kills`, `spent`, `playTime`, `bestTrip`) ; réglages `muted` (l'ancienne clé `gouffre.muted`
+  n'est lue qu'au premier lancement) et `shake` (secousses de l'écran). Une sauvegarde illisible est copiée dans
+  `gouffre.save.v1.corrupt` avant d'être remplacée. L'expédition en cours (mine, sac, position) n'est pas
+  sauvegardée : recharger la page en démarre une nouvelle (butin non banqué perdu, aucune mort comptée).
+- **Banque** : déclenchée quand les pieds du joueur sont au niveau de la surface ou au-dessus
+  (`feetY <= camp.bankY`), donc dès qu'on remonte sur le sol du camp.
+- **Minerais** : 1 bloc de minerai = 1 éclat = 1 unité de sac (valeur du minerai). Sac plein : l'éclat n'est plus
+  aimanté et reste au sol (300 s), toast « Sac plein ! ».
+- **Bourse de secours** : s'applique à tout le butin non banqué (sac **et** or de run), et la part conservée est
+  **banquée immédiatement** à la mort ; la nouvelle expédition repart donc toujours avec un sac vide.
+- **Abandon** (« Recommencer l'expédition », menu pause) = une mort (même règlement, écran de résumé).
+- **Forge** : niveaux max pioche 5, vitalité 5, armure 5, grappin 4, sac 5, lanterne 4, bottes 3, bourse 2.
+  Pioche : tiers 0/1/2/2/3/3 (la 1ʳᵉ amélioration débloque les briques), dégâts d'attaque 10 + 4 × niveau.
+  Coûts équilibrés par `tools/economy.mjs` (1ʳᵉ amélioration après une courte descente, dureté 1 vers la 3ᵉ,
+  dureté 2 vers la 10ᵉ, dureté 3 vers la 20ᵉ, Gardien atteignable vers 2 h de jeu) ; un test unitaire vérifie ces cibles.
+- **Reliques** : 11 (les 7 prévues + Lanterne spectrale, Frénésie, Avarice, Cœur de troll), rareté commune /
+  peu commune / rare, tirage pondéré par couche (plus profond = plus rare), jamais de doublon. Coffres « or » :
+  16 × (1 + d/25) pièces ; un coffre à relique donne de l'or si toutes sont possédées. Un coup de pioche ouvre aussi un coffre.
+- **Victoire** : 3,2 s après la mort du Gardien, les pièces au sol sont ramassées et tout le butin est banqué, puis
+  l'écran de victoire. « Continuer (NG+ n) » monte le niveau NG+ et régénère la mine ; « Retour au titre » garde le niveau.
+- **Menus** : le titre affiche « Continuer » (reprend l'expédition en mémoire, ou en commence une avec l'or banqué
+  affiché) et « Réglages » (son, secousses, effacer la sauvegarde avec confirmation ; les réglages survivent à
+  l'effacement). Navigation clavier : flèches / ZQSD, Entrée / Espace, Échap ; E ferme la Forge.

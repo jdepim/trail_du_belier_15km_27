@@ -375,6 +375,22 @@ function texBeam(seed, cols) {
   return p;
 }
 
+/** Iron portcullis of the Heart (sealed while the Guardian fights). */
+function texGate(cols, variant) {
+  const p = new Pix(TS, TS);
+  const [c0, c1, c2, c3] = cols;
+  p.fill('#050308');
+  for (let x = 1; x < TS; x += 4) {
+    for (let y = 0; y < TS; y++) { p.set(x, y, c3); p.set(x + 1, y, c2); p.set(x + 2, y, c1); }
+  }
+  for (const y of [5, 12]) {
+    for (let x = 0; x < TS; x++) { p.set(x, y, c2); p.set(x, y + 1, c1); p.set(x, y - 1, c0); }
+    for (let x = 2; x < TS; x += 4) p.set(x, y, c3);
+  }
+  if (variant) for (let x = 1; x < TS; x += 4) { p.set(x + 1, 15, c3); p.set(x + 1, 14, c2); } // spike tips
+  return p;
+}
+
 function texGrass(seed) {
   const dirt = TILES[T.DIRT].colors;
   const p = texNoise(seed, dirt, { specks: 5, pebbles: 1 });
@@ -434,6 +450,7 @@ function buildTileTextures() {
   base(T.OBSIDIAN, 3, (s) => texObsidian(s, C('OBSIDIAN')));
   base(T.ARENA, 3, (s, v) => texArena(s, C('ARENA'), v === 2));
   base(T.BEAM, 2, (s) => texBeam(s, C('BEAM')));
+  base(T.GATE, 2, (s, v) => texGate(C('GATE'), v));
   // ores on top of their base rock
   for (const def of TILES) {
     if (!def.ore) continue;
@@ -864,15 +881,41 @@ function buildProps() {
   }
   S('coin', [['.ooo.', 'oYyyo', 'oyYko', 'oykko', '.ooo.'], ['.oo.', 'oYyo', 'oyko', 'oyko', '.oo.'], ['.o.', 'oyo', 'oyo', 'oko', '.o.'], ['.oo.', 'oyYo', 'okyo', 'okyo', '.oo.']],
     { o: '#5a3a05', y: '#eab308', Y: '#fff3a3', k: '#b8860b' }, 2, 4, null);
-  S('heart', [['.oo.oo.', 'oRRoRWo', 'oRRRRRo', '.oRRRo.', '..oRo..', '...o...']], { o: '#3a0612', R: '#e0304e', W: '#ffd0dc' }, 3, 5, null);
-  const relicPal = { o: '#0c0812', 1: '#8a6a2a', 2: '#e0ac48', 3: '#fff0a0', r: '#e0304e', b: '#6ee7f5', w: '#e8eef8', g: '#7a7a88' };
-  S('relic_wing', [['...oo.....', '..o33o....', '.o322oo...', 'o3222233o.', 'o22222223o', '.o2222oo..', '..oooo....']], relicPal, 5, 7, null);
-  S('relic_magnet', [['.oo..oo.', 'orro.orr', 'orro.orr', 'orro.orr', 'orrooorr', '.orrrrr.', '..ooooo.']], relicPal, 4, 7, null);
-  S('relic_fang', [['oooooooo', 'owwwwwwo', '.owo.ow.', '.ow..ow.', '..o...o.']], relicPal, 4, 5, null);
-  S('relic_flame', [['...o....', '..oro...', '.orro.o.', '.or2rorо', 'or232rro', 'or2332ro', '.orrrro.', '..oooo..'].map((r) => r.replace(/о/g, 'o'))], relicPal, 4, 8, null);
-  S('relic_stone', [['..oooo..', '.ogggwo.', 'oggggggo', 'oggoggwo', 'ogggggoo', '.oggggo.', '..oooo..']], relicPal, 4, 7, null);
-  S('relic_feather', [['......oo', '....oowo', '...owwo.', '..owwo..', '.owwo...', '.owo....', 'o.o.....']], relicPal, 4, 7, null);
-  S('relic_bolt', [['...ooo', '..o22o', '.o22o.', 'o2222o', '.oo22o', '..o2o.', '.o2o..', '.oo...']], relicPal, 3, 8, null);
+  S('heart', [['.oo.oo.', 'oRRoRWo', 'oRRRRRo', '.oRRRo.', '..oRo..', '...o...'], ['.oo.oo.', 'oPPoPWo', 'oPRRRPo', '.oPRPo.', '..oPo..', '...o...']], { o: '#3a0612', R: '#e0304e', P: '#ff7a95', W: '#ffffff' }, 3, 5, null);
+  // --- relics (run bonuses): 8 × 8 + outline, anchored centre-bottom (HUD row, toasts, chests)
+  const RP = {
+    w: '#f4f0e6', W: '#ffffff', G: '#b0b0bc', g: '#6a6a78', k: '#2e2c38', c: '#6ee7f5', C: '#2aa3b8',
+    r: '#e0304e', R: '#ff8a9a', d: '#7a1428', y: '#fde047', Y: '#fff7c0', f: '#fb923c', F: '#c2410c',
+    2: '#e0ac48', 1: '#8a6a2a', 3: '#fff0a0', n: '#6e4424', s: '#3aa442', S: '#a6f28e', D: '#1b5a26', p: '#b070f0',
+  };
+  const relic = (name, rows) => S(name, [rows], RP, 4, 8, OUTLINE);
+  relic('relic_wing', ['...cc...', '..cWWc..', '.cW..Wc.', 'cW....Wc', '...cc...', '..cWWc..', '.cW..Wc.', 'cW....Wc']);
+  relic('relic_magnet', ['GW....WG', 'Gg....gG', 'rR....Rr', 'rR....Rr', 'rR....Rr', 'rRr..rRr', '.rRrrRr.', '..dddd..']);
+  relic('relic_fang', ['wwwwwwww', 'Gwwwwwwg', '.wW..Ww.', '.ww..ww.', '..w..w..', '..r..r..', '.....R..', '..r.....']);
+  relic('relic_flame', ['.y...f..', '.fy.fyf.', 'fyYffyf.', 'GGGGGGGG', 'Gg.nn.gG', 'g..nn..g', '...nn...', '...nn...']);
+  relic('relic_stone', ['.GGGGGG.', 'GwGGGgGG', 'GGGGgGGG', 'GGGgGGGG', 'gGGGGgGg', '.gGGGGg.', '..gGGg..', '...gg...']);
+  relic('relic_feather', ['......ww', '....wwWG', '...wwWG.', '..wwWG..', '.wwWG...', '.wWG....', '.G......', 'G.......']);
+  relic('relic_bolt', ['....yyy.', '...yYy..', '..yYy...', '.yYYYYy.', '...yYy..', '..yYy...', '..yy....', '.y......']);
+  relic('relic_lantern', ['...kk...', '..k..k..', '.kkkkkk.', '.kcWWck.', '.kcWWck.', '.kCccCk.', '.kkkkkk.', '...kk...']);
+  relic('relic_frenzy', ['R..R..R.', 'r..r..r.', '.r..r..r', '.r..r..r', '..d..d..', '..d..d..', '........', '........']);
+  relic('relic_greed', ['..2222..', '.233332.', '.122221.', '..2222..', '.233332.', '.122221.', '.233332.', '.111111.']);
+  relic('relic_heart', ['.ss..ss.', 'sSSssSSs', 'sSSSSSSs', 'sSSSSSDs', '.sSSSDs.', '..sSDs..', '...ss...', '........']);
+
+  // --- Forge upgrade icons: 12 × 12 + outline (DOM, upscaled by makeIcon)
+  const UP = {
+    M: '#e8eef8', m: '#9aa4b8', K: '#545d70', b: '#6a4222', B: '#9a6a3e', r: '#e0304e', R: '#ff8a9a', d: '#7a1428',
+    y: '#eab308', Y: '#fff3a3', k: '#8a5a0b', g: '#c9a86a', G: '#6a5238', w: '#f2e6c8', o: '#2a1a12', l: '#ffcf6b', L: '#ff9a3c',
+    c: '#6ee7f5', n: '#3a2414', N: '#5a3a22', s: '#b0b0bc',
+  };
+  const up = (name, rows) => S(name, [rows], UP, 6, 6, OUTLINE);
+  up('up_pick', ['..MMMMMMM...', '.MmmmmmmmMM.', 'Mm.....KmmM.', 'M.....bK.mM.', '.....bB...M.', '....bB......', '...bB.......', '..bB........', '.bB.........', 'bB..........', 'b...........', '............']);
+  up('up_vitality', ['.rrr...rrr..', 'rRRrr.rrRrr.', 'rRRrrrrrrrr.', 'rRrrrrrrrrr.', 'rrrrrrrrrrr.', '.rrrrrrrrr..', '..rrrrrrdr..', '...rrrrdr...', '....rrdr....', '.....rd.....', '............', '............']);
+  up('up_armor', ['.mm......mm.', 'mMMm....mMMm', 'mMmmmmmmmmMm', '.mMMMMMMMMm.', '.mMmmMMmmMm.', '.mMMMMMMMMm.', '.mmMMmmMMmm.', '..mMMMMMMm..', '..mmMMMMmm..', '...mMMMMm...', '....mmmm....', '............']);
+  up('up_grapple', ['.....w......', '.....w......', '.....w......', '.....w......', '....MMM.....', '.M...M...M..', 'Mm...M...mM.', 'Mm...M...mM.', '.Mm..M..mM..', '..MmmMmmM...', '....MmM.....', '............']);
+  up('up_bag', ['....gg......', '...g..g.....', '..NNNNNN....', '.NBBBBBBN...', 'NBBBBBBBBN..', 'NBBggBBBBN..', 'NBBgYgBBBN..', 'NBBBggBBBN..', 'NBBBBBBBBN..', '.NBBBBBBN...', '..NNNNNN....', '............']);
+  up('up_lantern', ['....KK......', '...K..K.....', '..KKKKKK....', '..KlLLlK....', '..KLllLK....', '..KlYYlK....', '..KLYYLK....', '..KlLLlK....', '..KKKKKK....', '....KK......', '............', '............']);
+  up('up_boots', ['...NNNN.....', '...NBBN.....', '...NBBN.....', '...NBBN.....', '...NBBN.....', '...NBBN.....', '..NBBBN.....', '.NBBBBBNNN..', 'NBBBBBBBBBN.', 'NBBBBBBBBBN.', 'nnnnnnnnnnn.', '............']);
+  up('up_insurance', ['....oooo....', '...gYYYYg...', '....gggg....', '..NNNNNNNN..', '.NBBBBBBBBN.', 'NBBByyyBBBBN', 'NBByYYkyBBBN', 'NBByYkkyBBBN', 'NBBByyyBBBBN', '.NBBBBBBBBN.', '..NNNNNNNN..', '............']);
 
   // --- icons (UI buttons / HUD)
   const ip = { o: '#0c0812', w: '#f2e6c8', W: '#ffffff', g: '#c9a86a', m: '#9aa4b8', M: '#e8eef8', b: '#6a4222', B: '#9a6a3e', r: '#e0304e', R: '#ff8090', y: '#eab308', Y: '#fff3a3', k: '#8a5a0b', d: '#5a4a3a' };
@@ -883,50 +926,525 @@ function buildProps() {
   S('icon_heart', [['.rr.rr.', 'rRrrrrr', 'rrrrrrr', '.rrrrr.', '..rrr..', '...r...']], ip, 3, 3, '#0c0812');
   S('icon_coin', [['.yyy.', 'yYyky', 'yYyky', 'yykky', '.yyy.']], ip, 2, 2, '#0c0812');
   S('icon_bag', [['..dd..', '.d..d.', 'bbbbbb', 'bBBBBb', 'bBggBb', 'bBBBBb', '.bbbb.']], ip, 3, 3, '#0c0812');
+  S('icon_bank', [['.bbbbb.', 'bBBBBBb', 'bbbyybb', 'bBByBBb', 'bBBBBBb', 'bbbbbbb']], ip, 3, 3, '#0c0812');
 }
 
-function buildEnemies() {
-  // placeholder art for step 2 (2 frames each, facing right)
-  S('enemy_slime', [
-    ['....oooo....', '..oo3322oo..', '.o322222e2o.', 'o2222222e22o', 'o2222222222o', 'o1222222221o', '.oooooooooo.'],
-    ['............', '...oooooo...', '.oo332222oo.', 'o322222e22e2', 'o2222222222o', 'o1111111111o', 'oooooooooooo'],
-  ], { o: '#0e2a14', 1: '#2a7a3a', 2: '#4fb34f', 3: '#b8f0a0', e: '#0e1a10' }, 6, 7, null);
-  S('enemy_bat', [
-    ['oo........oo', 'o2o..oo..o2o', 'o22ooeeoo22o', '.o22o11o22o.', '..oo.oo.oo..'],
-    ['............', '....oooo....', '.oooeeeeooo.', 'o222o11o222o', 'oo..o..o..oo'],
-  ], { o: '#0c0812', 1: '#4a2a5a', 2: '#2a1838', e: '#ff4040' }, 6, 3, null);
-  S('enemy_skeleton', [
-    ['...oooo...', '..o3333o..', '..o3e3eo..', '..o3333o..', '...o22o...', '..o3333o..', '.o3o33o3o.', '.o.o33o.o.', '...o33o...', '..o3oo3o..', '..o3..3o..', '..o3..3o..', '.o33..33o.'],
-    ['...oooo...', '..o3333o..', '..o3e3eo..', '..o3333o..', '...o22o...', '..o3333o..', '.o3o33o3o.', '.o.o33o.o.', '...o33o...', '...o3o3o..', '..o3...3o.', '.o3....3o.', '.o33...33o'],
-  ], { o: '#1a1612', 2: '#a89e86', 3: '#e8e0c8', e: '#e0304e' }, 5, 13, null);
-  S('enemy_spider', [
-    ['....oooo....', '..oo1111oo..', 'o.o1ee1e1o.o', '.oo111111oo.', 'o.o111111o.o', '.o.oooooo.o.', 'o..o....o..o'],
-    ['....oooo....', '..oo1111oo..', '.oo1ee1e1oo.', 'o.o111111o.o', '.oo111111oo.', 'o..oooooo..o', '.o........o.'],
-  ], { o: '#0c0812', 1: '#3a2a3a', e: '#ff3050' }, 6, 7, null);
-  S('enemy_ghost', [
-    ['...oooooo...', '..o333333o..', '.o33333333o.', '.o3eo33eo3o.', '.o33333333o.', '.o33o33o33o.', '.o33333333o.', '.o3333333o..', '..o3o33o3o..', '...o.oo.o...'],
-    ['...oooooo...', '..o333333o..', '.o33333333o.', '.o3eo33eo3o.', '.o33333333o.', '.o333oo333o.', '.o33333333o.', '..o3333333o.', '..o3o33o3o..', '..o.o..o.o..'],
-  ], { o: '#5a7a9a', 3: '#c8e0f0', e: '#0a1420' }, 6, 10, null);
-  S('enemy_imp', [
-    ['.o......o.', '.oo....oo.', '.o2oooo2o.', 'o22e22e22o', 'o22222222o', '.o2y22y2o.', '..o2222o..', '.o2o22o2o.', '..o.oo.o..'],
-    ['o........o', '.o......o.', '.o2oooo2o.', 'o22e22e22o', 'o22222222o', '.o2y22y2o.', '..o2222o..', '..o2oo2o..', '...o..o...'],
-  ], { o: '#2a0606', 2: '#c2410c', e: '#fde047', y: '#fb923c' }, 5, 9, null);
-  S('enemy_golem', [
-    ['.....oooooo.....', '....o222222o....', '....o2e22e2o....', '..ooo222222ooo..', '.o22o222222o22o.', 'o222o2rr2r2o222o', 'o222o222222o222o', 'o22oo222222oo22o', '.oo.o222222o.oo.', '....o22oo22o....', '...o222oo222o...', '...o222oo222o...', '...oooo..oooo...'],
-    ['.....oooooo.....', '....o222222o....', '....o2e22e2o....', '..ooo222222ooo..', '.o22o222222o22o.', 'o222o2r2rr2o222o', 'o222o222222o222o', '.o2oo222222oo2o.', '..o.o222222o.o..', '....o22oo22o....', '..o222o..o222o..', '..o222o..o222o..', '..oooo....oooo..'],
-  ], { o: '#0c0812', 2: '#4a4050', e: '#ff8a1f', r: '#c2410c' }, 8, 13, null);
-  const gd = new Pix(48, 48);
-  for (let y = 4; y < 48; y++) {
-    const half = Math.round(8 + Math.sin(y / 6) * 3 + (y > 20 ? 6 : 0));
-    for (let x = 24 - half; x < 24 + half; x++) gd.set(x, y, (x + y) % 5 === 0 ? '#3a1a4a' : '#2a1238');
+// ------------------------------------------------------------------ enemies, boss, projectiles
+// Procedural pixel art: shaded ellipses / limbs / polygons in the same dark SOTN
+// ramps as the tiles, then the shared 1px outline. Every enemy faces right
+// (drawSprite flips it). Each enemy sprite also gets two generated variants:
+// `<name>_flash` (white hit flash) and `<name>_tele` (red attack telegraph).
+
+function fillEllipse(p, cx, cy, rx, ry, col) {
+  for (let y = Math.floor(cy - ry - 1); y <= Math.ceil(cy + ry + 1); y++) {
+    for (let x = Math.floor(cx - rx - 1); x <= Math.ceil(cx + rx + 1); x++) {
+      const nx = (x + 0.5 - cx) / rx, ny = (y + 0.5 - cy) / ry;
+      if (nx * nx + ny * ny <= 1) p.set(x, y, col);
+    }
   }
-  gd.rect(16, 10, 4, 3, '#ff3050'); gd.rect(28, 10, 4, 3, '#ff3050');
-  gd.rows(['o......o', '.o....o.', '..oooo..'], { o: '#e8e0c8' }, 20, 18);
-  gd.line(8, 0, 14, 8, '#e8e0c8', 2); gd.line(40, 0, 34, 8, '#e8e0c8', 2);
-  gd.outline(OUTLINE);
-  addSprite('enemy_guardian', [gd], 24, 48);
-  S('proj_bone', [['.oo...', 'o33ooo', '.o3333', '...oo.'], ['..oo..', '.o33o.', '.o33o.', '..oo..']], { o: '#1a1612', 3: '#e8e0c8' }, 3, 2, null);
-  S('proj_fireball', [['..oo..', '.oYYo.', 'oYWWYo', 'oYWWYo', '.oYYo.', '..oo..'], ['.o..o.', '..YY..', 'oYWWY.', '.YWWYo', '..YY..', '.o..o.']], { o: '#c2410c', Y: '#fb923c', W: '#fde047' }, 3, 3, null);
+}
+
+/** Ellipse shaded with a 4-colour ramp (lit from the top-left), dithered bands. */
+function shadeEllipse(p, cx, cy, rx, ry, ramp, opts = {}) {
+  const lx = opts.lx ?? -0.55, ly = opts.ly ?? -0.75, hi = opts.hi ?? 0.92;
+  for (let y = Math.floor(cy - ry - 1); y <= Math.ceil(cy + ry + 1); y++) {
+    for (let x = Math.floor(cx - rx - 1); x <= Math.ceil(cx + rx + 1); x++) {
+      const nx = (x + 0.5 - cx) / rx, ny = (y + 0.5 - cy) / ry, d = nx * nx + ny * ny;
+      if (d > 1 || (opts.clip && opts.clip(x, y))) continue;
+      const nz = Math.sqrt(1 - d);
+      const l = 0.5 + (nx * lx + ny * ly + nz * 0.55) * 0.5 + bayer(x, y) * 0.22;
+      const i = l < 0.4 ? 0 : l < 0.64 ? 1 : l < hi ? 2 : 3;
+      p.set(x, y, ramp[Math.min(ramp.length - 1, i)]);
+    }
+  }
+}
+
+/** Thick segment (round caps). */
+function limb(p, x0, y0, x1, y1, r, col) {
+  const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2));
+  for (let i = 0; i <= n; i++) { const t = i / n; fillEllipse(p, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, r, r, col); }
+}
+
+/** Filled polygon, pts = [x0, y0, x1, y1, ...]. */
+function fillPoly(p, pts, col) {
+  let minY = Infinity, maxY = -Infinity;
+  for (let i = 1; i < pts.length; i += 2) { minY = Math.min(minY, pts[i]); maxY = Math.max(maxY, pts[i]); }
+  for (let y = Math.floor(minY); y <= Math.ceil(maxY); y++) {
+    const yc = y + 0.5, xs = [];
+    for (let i = 0; i < pts.length; i += 2) {
+      const j = (i + 2) % pts.length;
+      const x0 = pts[i], y0 = pts[i + 1], x1 = pts[j], y1 = pts[j + 1];
+      if ((y0 <= yc && y1 > yc) || (y1 <= yc && y0 > yc)) xs.push(x0 + ((yc - y0) / (y1 - y0)) * (x1 - x0));
+    }
+    xs.sort((a, b) => a - b);
+    for (let k = 0; k + 1 < xs.length; k += 2) for (let x = Math.round(xs[k]); x < Math.round(xs[k + 1]); x++) p.set(x, y, col);
+  }
+}
+
+const DEG = Math.PI / 180;
+/** Point at `len` px from (x, y) in direction `ang` degrees (0 = right, 90 = down). */
+const polar = (x, y, ang, len) => [x + Math.cos(ang * DEG) * len, y + Math.sin(ang * DEG) * len];
+
+/** Add `<name>_flash` and `<name>_tele` tinted copies of a registered sprite. */
+function addTintVariants(name) {
+  const s = sprites.get(name);
+  const tint = (color, alpha) => {
+    const c = mkCanvas(s.canvas.width, s.canvas.height);
+    const g = c.getContext('2d');
+    g.drawImage(s.canvas, 0, 0);
+    g.globalCompositeOperation = 'source-atop';
+    g.globalAlpha = alpha; g.fillStyle = color; g.fillRect(0, 0, c.width, c.height);
+    return c;
+  };
+  sprites.set(name + '_flash', { ...s, name: name + '_flash', canvas: tint('#fffaf0', 0.88), flip: null });
+  sprites.set(name + '_tele', { ...s, name: name + '_tele', canvas: tint('#ff2a1a', 0.38), flip: null });
+}
+
+// ---- Gelée (slime): glossy green jelly with a dark core and beady eyes
+const SLIME_RAMP = ['#113a1b', '#21692d', '#3aa442', '#a6f28e'];
+function slimeFrame(rx, ry, o = {}) {
+  const p = new Pix(22, 17);
+  const cx = 11, base = 15;
+  const cy = base - ry + 1.5;
+  shadeEllipse(p, cx, cy, rx, ry + 1, SLIME_RAMP, { clip: (x, y) => y > base, hi: 0.86 });
+  // translucent darker core with a swallowed pebble
+  fillEllipse(p, cx - 0.5, base - ry * 0.45, rx * 0.5, ry * 0.35, '#1b5a26');
+  p.set(cx - 2, Math.round(base - ry * 0.45), '#3a3c4a'); p.set(cx - 1, Math.round(base - ry * 0.45), '#525566');
+  // rim of light on the floor contact
+  for (let x = Math.round(cx - rx + 2); x <= Math.round(cx + rx - 2); x++) if (p.alpha(x, base) && (x & 1)) p.set(x, base, '#2f8a3a');
+  // eyes (looking right)
+  const ey = Math.round(cy - ry * 0.3 + (o.eyeDy || 0));
+  for (const ex of [Math.round(cx + rx * 0.05), Math.round(cx + rx * 0.55)]) {
+    if (o.squint) { p.set(ex, ey + 1, '#07140a'); p.set(ex + 1, ey + 1, '#07140a'); continue; }
+    p.rect(ex, ey, 2, 2, '#07140a');
+    p.set(ex, ey, '#e8ffe0');
+  }
+  if (o.drops) for (const [dx, dy] of [[-rx - 1, -2], [rx + 1, -3], [-rx + 1, -5], [rx - 2, -6]]) p.set(Math.round(cx + dx), Math.round(base + dy), SLIME_RAMP[2]);
+  return p.outline(OUTLINE);
+}
+
+// ---- Chauve-souris (bat): half sprites mirrored (front view)
+function mirrorRows(half) { return half.map((r) => r + [...r].reverse().join('')); }
+const BAT_PAL = { 1: '#241430', 2: '#4a2a5c', 3: '#70427e', b: '#4a2a3c', B: '#80546a', e: '#ff3a3a', t: '#e8e0c8', k: '#160a18' };
+const BAT_FLY = [
+  // wings up
+  ['1........', '21.......', '221....b.', '3221...bB', '.3221.bBe', '..322bbBB', '...32bbBt', '....2bbbb', '.....bbb.', '......b..', '.........'],
+  // wings level
+  ['.........', '.........', '.......b.', '.......bB', '1.....bBe', '21...bbBB', '3221bbbBt', '.33322bbb', '..3.3.bb.', '......b..', '.........'],
+  // wings down
+  ['.........', '.........', '.......b.', '.......bB', '......bBe', '.....bbBB', '...12bbBt', '..1222bbb', '.1322.bb.', '1332..b..', '13.......'],
+  // wings level (recover)
+  ['.........', '.........', '.......b.', '.......bB', '......bBe', '1....bbBB', '32211bbBt', '.3332bbbb', '...3.2bb.', '......b..', '.........'],
+];
+const BAT_HANG = [
+  // wrapped in its wings, upside down (feet at the top touching the ceiling)
+  ['......k..', '......b..', '.....bbb.', '....12bb.', '....122B.', '....132B.', '....132B.', '....122b.', '.....2Bb.', '......Be.', '......bB.', '.......b.'],
+  ['......k..', '......b..', '.....bbb.', '....12bb.', '....122B.', '....132B.', '....122B.', '....122b.', '.....2Bb.', '......Be.', '......bB.', '.......b.'],
+  // unfolding (waking)
+  ['......k..', '......b..', '1....bbb.', '21..1bbb.', '321122bB.', '.33222bB.', '...32bbB.', '.....bBb.', '.....bBb.', '......Be.', '......bB.', '.......b.'],
+];
+
+// ---- Squelette (skeleton): limbs drawn by angle like the player
+const BONE = { hi: '#efe8d2', mid: '#c4b99c', lo: '#8a7f6a', dk: '#3e342a', eye: '#ff3c3c' };
+const SKULL = ['.hhhh.', 'hhhhhm', 'hkkhkk', 'hkrhkr', 'mhhhhm', '.mdmd.', '.mmmm.'];
+function boneLine(p, x0, y0, x1, y1) { p.line(x0, y0, x1, y1, BONE.mid, 1); p.set(Math.round(x0), Math.round(y0), BONE.hi); p.set(Math.round(x1), Math.round(y1), BONE.hi); }
+function skeletonFrame(o) {
+  const p = new Pix(24, 30);
+  const bob = o.bob || 0, hipX = 11, hipY = 19 + bob;
+  const legs = o.legs;
+  // legs: thigh + shin (back leg darker)
+  legs.forEach(([a1, a2], i) => {
+    const col = i === 0 ? BONE.lo : BONE.mid;
+    const [kx, ky] = polar(hipX + i, hipY, 90 - a1, 5);
+    let [fx, fy] = polar(kx, ky, 90 - a1 + a2, 5);
+    if (fy > 28.5) fy = 28.5;
+    p.line(hipX + i, hipY, kx, ky, col, 1); p.line(kx, ky, fx, fy, col, 1);
+    p.set(Math.round(kx), Math.round(ky), BONE.hi);
+    p.rect(Math.round(fx) - 1, Math.round(fy), 3, 1, col); p.set(Math.round(fx) + 1, Math.round(fy), BONE.hi);
+  });
+  // back arm
+  const shX = 12, shY = 11 + bob;
+  const [ba1, ba2] = o.backArm || [100, 20];
+  const [bex, bey] = polar(shX - 1, shY, ba1, 4); const [bhx, bhy] = polar(bex, bey, ba1 + ba2, 4);
+  p.line(shX - 1, shY, bex, bey, BONE.lo, 1); p.line(bex, bey, bhx, bhy, BONE.lo, 1);
+  // pelvis, spine, ribs
+  p.rows(['.mhhm.', 'mh..hm'], { h: BONE.hi, m: BONE.mid }, hipX - 2, hipY - 1);
+  p.line(12, 10 + bob, 12, hipY - 1, BONE.mid, 1);
+  for (let r = 0; r < 3; r++) { p.line(9, 12 + r * 2 + bob, 15, 12 + r * 2 + bob, r === 0 ? BONE.hi : BONE.mid, 1); p.set(9, 12 + r * 2 + bob, BONE.lo); }
+  p.rect(10, 11 + bob, 5, 1, BONE.hi);
+  // skull (leans with the throw)
+  p.rows(SKULL, { h: BONE.hi, m: BONE.mid, k: '#1a0e0e', r: BONE.eye, d: BONE.dk }, 10 + (o.headDx || 0), 3 + bob + (o.headDy || 0));
+  // front arm (+ held bone)
+  const [fa1, fa2] = o.frontArm || [80, -20];
+  const [ex, ey] = polar(shX + 1, shY, fa1, 4); const [hx, hy] = polar(ex, ey, fa1 + fa2, 4);
+  p.line(shX + 1, shY, ex, ey, BONE.hi, 1); p.line(ex, ey, hx, hy, BONE.mid, 1);
+  p.set(Math.round(hx), Math.round(hy), BONE.hi);
+  if (o.holdBone) {
+    const [bx0, by0] = polar(hx, hy, o.holdBone, -3); const [bx1, by1] = polar(hx, hy, o.holdBone, 3);
+    boneLine(p, bx0, by0, bx1, by1);
+  }
+  return p.outline(OUTLINE);
+}
+
+// ---- Araignée (spider): shaded body, 8 animated legs
+const SPIDER_RAMP = ['#1c1022', '#35223f', '#563a66', '#7e5e90'];
+function spiderFrame(o) {
+  const p = new Pix(26, 16);
+  const legCol = '#4a3558', farCol = '#24182c', jointCol = '#8a6a9a';
+  const bx = 12, by = 8 + (o.dy || 0);
+  const pose = o.pose || 'walk', ph = o.phase || 0;
+  const REACH = [-9, -5, 5, 9];
+  // side view facing right: 4 legs per side, knees high, feet on the floor
+  const leg = (i, near) => {
+    const rootX = bx + 1 + i * 0.9, rootY = by + (near ? 1 : 0);
+    const reach = REACH[i] * (near ? 1 : 0.85);
+    let kx, ky, fx, fy;
+    if (pose === 'hang') { kx = rootX + reach * 0.35; ky = by - 3; fx = rootX + reach * 0.5; fy = by + 1 + (i % 2); }
+    else if (pose === 'drop') { kx = rootX + reach * 0.75; ky = by - 5; fx = rootX + reach * 1.15; fy = by - 2 + (i % 2) * 2; }
+    else {
+      const s = Math.sin(ph * Math.PI / 2 + i * Math.PI / 2 + (near ? Math.PI : 0));
+      const lift = Math.max(0, s) * 1.6;
+      kx = rootX + reach * 0.55 + s; ky = by - 4 - lift;
+      fx = rootX + reach + s * 1.5; fy = by + 6 - lift;
+    }
+    const col = near ? legCol : farCol;
+    p.line(rootX, rootY, kx, ky, col, 1);
+    p.line(kx, ky, fx, fy, col, 1);
+    if (near) p.set(Math.round(kx), Math.round(ky), jointCol);
+  };
+  for (let i = 0; i < 4; i++) leg(i, false);
+  // abdomen (rear) + cephalothorax (front, right)
+  shadeEllipse(p, bx - 3, by - 1, 5, 4, SPIDER_RAMP);
+  shadeEllipse(p, bx + 3.5, by + 0.5, 3, 2.5, SPIDER_RAMP);
+  // red hourglass marking, eyes, fangs
+  p.rows(['rr', '.r', 'rr'], { r: '#c8182e' }, bx - 4, by - 2);
+  p.set(bx + 5, by, '#ff3050'); p.set(bx + 6, by, '#ff3050'); p.set(bx + 5, by - 1, '#ff8090'); p.set(bx + 4, by, '#a01028');
+  p.set(bx + 6, by + 2, '#d8d0c0'); p.set(bx + 5, by + 2, '#8a7f6a');
+  for (let i = 0; i < 4; i++) leg(i, true);
+  return p.outline(OUTLINE);
+}
+
+// ---- Spectre (ghost): wavy tail, hollow eyes
+const GHOST_RAMP = ['#3d5a7c', '#7a9ec6', '#c4dcf0', '#f4fbff'];
+function ghostFrame(ph, attack) {
+  const p = new Pix(22, 26);
+  const cx = 11, top = 2;
+  // body: head dome + tapering tail swaying with the phase
+  for (let y = top; y < 25; y++) {
+    const t = (y - top) / 22;
+    let half = y < top + 7 ? Math.sqrt(Math.max(0, 49 - (top + 7 - y) ** 2)) * 0.95 : 6.6 - (y - top - 7) * 0.34;
+    if (attack && y > top + 6 && y < top + 13) half += 1;
+    if (half <= 0.3) continue;
+    const off = Math.sin(y * 0.45 - ph * Math.PI / 2) * 2.2 * t;
+    for (let x = Math.floor(cx - half + off); x <= Math.ceil(cx + half + off); x++) {
+      if (Math.abs(x + 0.5 - cx - off) > half) continue;
+      // ragged strands at the tail end
+      if (y > top + 16 && Math.sin(x * 1.7 + ph * 1.3) > 0.35) continue;
+      const nx = (x + 0.5 - cx - off) / Math.max(1, half);
+      const l = 0.62 - nx * 0.3 - t * 0.45 + bayer(x, y) * 0.25 + (y < top + 4 ? 0.15 : 0);
+      p.set(x, y, GHOST_RAMP[l < 0.28 ? 0 : l < 0.5 ? 1 : l < 0.78 ? 2 : 3]);
+    }
+  }
+  // wispy arms
+  const armY = top + 9;
+  if (attack) {
+    p.line(cx + 5, armY, cx + 10, armY - 2, GHOST_RAMP[2], 1); p.line(cx + 5, armY + 1, cx + 10, armY + 2, GHOST_RAMP[1], 1);
+    p.line(cx - 5, armY, cx - 8, armY - 3, GHOST_RAMP[1], 1);
+  } else {
+    const s = ph % 2 ? 1 : 0;
+    p.line(cx + 5, armY, cx + 8, armY + 3 + s, GHOST_RAMP[1], 1); p.line(cx - 5, armY, cx - 8, armY + 4 - s, GHOST_RAMP[1], 1);
+  }
+  // hollow eyes + mouth (looking right)
+  const eyeCol = attack ? '#ff3a4a' : '#0a1420';
+  p.rows(['kk', 'kk', 'kk'], { k: '#0a1420' }, cx + 1, top + 5); p.rows(['kk', 'kk', 'kk'], { k: '#0a1420' }, cx + 5, top + 5);
+  p.set(cx + 1, top + 6, eyeCol); p.set(cx + 5, top + 6, eyeCol);
+  if (attack) p.rows(['.kk.', 'kkkk', 'kkkk', '.kk.'], { k: '#0a1420' }, cx + 2, top + 9);
+  else p.rows(['kk', 'kk'], { k: '#0a1420' }, cx + 3, top + 10);
+  return p.outline('#1a2a44');
+}
+
+// ---- Diablotin de feu (imp): red demon, bat wings, fireball in the hands
+const IMP = { dk: '#4a0a06', lo: '#8a1c0a', mid: '#c2410c', hi: '#f06a2a', eye: '#fde047', horn: '#f0e0c0', wing: '#3a0a10', wing2: '#6a1418' };
+const IMP_WINGS = [-65, -20, 25, -20];
+function impFrame(o) {
+  const p = new Pix(24, 22);
+  const cx = 12, cy = 11 + (o.bob || 0);
+  // tail
+  p.line(cx - 2, cy + 4, cx - 6, cy + 6, IMP.lo, 1); p.line(cx - 6, cy + 6, cx - 8, cy + 3, IMP.lo, 1);
+  p.rows(['.d.', 'ddd'], { d: IMP.dk }, cx - 9, cy + 1);
+  // wing (behind): membrane polygon from the shoulder
+  const wa = o.wing;
+  const [tx, ty] = polar(cx - 2, cy - 3, 180 + wa, 10);
+  const [mx, my] = polar(cx - 2, cy - 3, 180 + wa * 0.4 + 25, 7);
+  fillPoly(p, [cx - 1, cy - 4, tx, ty, mx, my, cx - 2, cy + 1], IMP.wing);
+  p.line(cx - 1, cy - 4, tx, ty, IMP.wing2, 1); p.line(tx, ty, mx, my, IMP.wing2, 1);
+  // legs
+  p.line(cx - 1, cy + 4, cx - 2, cy + 8, IMP.lo, 1); p.line(cx + 1, cy + 4, cx + 2, cy + 8, IMP.mid, 1);
+  // body + head
+  shadeEllipse(p, cx, cy + 1.5, 3.2, 3.8, [IMP.dk, IMP.lo, IMP.mid, IMP.hi]);
+  shadeEllipse(p, cx + 1, cy - 4.5, 3.6, 3.2, [IMP.dk, IMP.lo, IMP.mid, IMP.hi]);
+  // horns, eyes, grin
+  p.line(cx - 1, cy - 7, cx - 3, cy - 10, IMP.horn, 1); p.line(cx + 3, cy - 7, cx + 4, cy - 10, IMP.horn, 1);
+  p.set(cx - 3, cy - 10, '#ffffff'); p.set(cx + 4, cy - 10, '#ffffff');
+  p.set(cx + 2, cy - 5, IMP.eye); p.set(cx + 4, cy - 5, IMP.eye);
+  p.line(cx + 1, cy - 3, cx + 4, cy - 3, IMP.dk, 1); p.set(cx + 2, cy - 3, IMP.horn); p.set(cx + 4, cy - 4, IMP.dk);
+  // arms (+ fireball)
+  if (o.cast) {
+    p.line(cx + 2, cy, cx + 8, cy - 1, IMP.hi, 1); p.line(cx + 1, cy + 1, cx + 7, cy + 1, IMP.mid, 1);
+  } else if (o.ball) {
+    const r = o.ball;
+    p.line(cx + 2, cy, cx + 5, cy - 1, IMP.hi, 1); p.line(cx + 1, cy + 1, cx + 5, cy + 2, IMP.mid, 1);
+    fillEllipse(p, cx + 7, cy, r + 1, r + 1, '#c2410c'); fillEllipse(p, cx + 7, cy, r, r, '#fb923c'); fillEllipse(p, cx + 7, cy, r * 0.5, r * 0.5, '#fef08a');
+  } else {
+    p.line(cx + 2, cy, cx + 4, cy + 3, IMP.mid, 1); p.set(cx + 4, cy + 3, IMP.hi);
+  }
+  return p.outline(OUTLINE);
+}
+
+// ---- Golem: basalt boulders held together by magma
+const GOLEM_RAMP = ['#1e1719', '#3b3031', '#5c4c49', '#7f6a62'];
+function golemFrame(o) {
+  const p = new Pix(36, 36);
+  const bob = o.bob || 0, lean = o.lean || 0, cr = o.crouch || 0;
+  const hx = 17 + lean, hy = 17 + bob + cr;
+  const dark = GOLEM_RAMP.map((c) => shade(c, 0.72));
+  const glow = o.dim ? '#7a2a0a' : '#ff8a1f', core = o.dim ? '#a0400c' : '#fde047';
+  const [l0, l1] = o.legs || [0, 0];
+  const [ba, fa] = o.arms || [100, 80];
+  // back leg + back arm (darker, behind the torso)
+  limb(p, hx - 3, hy + 5, 13 + l0, 30, 3, dark[1]);
+  shadeEllipse(p, 13 + l0, 31.5, 4.2, 2.6, dark);
+  const [bex, bey] = polar(hx - 6, hy - 4, ba, 6);
+  const [bfx, bfy] = polar(bex, bey, ba - 20, 5);
+  limb(p, hx - 6, hy - 4, bex, bey, 2.4, dark[1]); limb(p, bex, bey, bfx, bfy, 2.2, dark[1]);
+  shadeEllipse(p, bfx, bfy, 3.6, 3.4, dark);
+  // torso boulder with magma cracks
+  shadeEllipse(p, hx, hy, 8.5, 7.8, GOLEM_RAMP);
+  p.line(hx - 4, hy - 3, hx, hy + 1, glow, 1); p.line(hx, hy + 1, hx - 1, hy + 6, glow, 1); p.line(hx, hy + 1, hx + 5, hy + 2, glow, 1);
+  p.set(hx, hy + 1, core); p.set(hx - 2, hy - 1, core);
+  // front leg
+  limb(p, hx + 3, hy + 5, 21 + l1, 30, 3.2, GOLEM_RAMP[1]);
+  shadeEllipse(p, 21 + l1, 31.5, 4.4, 2.8, GOLEM_RAMP);
+  p.set(21 + l1, 28, glow);
+  // head on top: heavy brow, glowing eyes
+  const hdx = Math.round(hx + 2 + (o.headDx || 0)), hdy = Math.round(hy - 9 + (o.headDy || 0));
+  shadeEllipse(p, hdx, hdy, 4.8, 4, GOLEM_RAMP);
+  p.rect(hdx - 2, hdy - 2, 7, 1, GOLEM_RAMP[0]);
+  const eye = o.dim ? '#4a1a08' : core;
+  p.rect(hdx, hdy - 1, 2, 1, eye); p.rect(hdx + 3, hdy - 1, 2, 1, eye);
+  if (!o.dim) { p.set(hdx, hdy, glow); p.set(hdx + 3, hdy, glow); }
+  p.rect(hdx, hdy + 2, 4, 1, GOLEM_RAMP[0]);
+  // front arm: shoulder boulder, forearm, huge fist
+  shadeEllipse(p, hx + 6, hy - 5, 4.2, 3.8, GOLEM_RAMP);
+  const [fex, fey] = polar(hx + 7, hy - 4, fa, 6);
+  const [ffx, ffy] = polar(fex, fey, fa - 25, 5);
+  limb(p, hx + 7, hy - 4, fex, fey, 2.6, GOLEM_RAMP[1]); limb(p, fex, fey, ffx, ffy, 2.6, GOLEM_RAMP[1]);
+  p.set(Math.round(fex), Math.round(fey), glow);
+  shadeEllipse(p, ffx, ffy, 4.3, 4, GOLEM_RAMP);
+  p.set(Math.round(ffx) + 1, Math.round(ffy) + 1, glow);
+  if (o.stars) for (const [sx, sy] of [[hdx - 6, hdy - 6], [hdx + 2, hdy - 8], [hdx + 7, hdy - 5]]) p.rows(['.y.', 'yYy', '.y.'], { y: '#e0ac48', Y: '#fff4c0' }, Math.round(sx), Math.round(sy));
+  return p.outline(OUTLINE);
+}
+
+// ---- Le Gardien de l'Abysse: armoured horned colossus with an abyssal core (64 x 64)
+const GUARD = {
+  normal: { a0: '#0e0a16', a1: '#221a34', a2: '#3a2c55', a3: '#5e4a86', cape: '#4a0c1e', cape2: '#7a1428', bone: '#d8cdb0', bone2: '#9a8e74', eye: '#ff3050', core: '#b070f0', core2: '#f0d8ff', fist: '#2e2444' },
+  rage: { a0: '#140606', a1: '#321010', a2: '#5a1c14', a3: '#8a3a1c', cape: '#5a0a08', cape2: '#a0200c', bone: '#f0dcc0', bone2: '#b08a6a', eye: '#fde047', core: '#ff8a1f', core2: '#fff4c0', fist: '#401410' },
+};
+function guardianFrame(o, P) {
+  const p = new Pix(64, 64);
+  const ramp = [P.a0, P.a1, P.a2, P.a3];
+  const bob = o.bob || 0, cr = o.crouch || 0, lean = o.lean || 0;
+  const cx = 31 + lean, chestY = 30 + bob + cr;
+  // cape (tattered) behind everything
+  const cw = o.capeWave || 0;
+  fillPoly(p, [cx - 10, chestY - 8, cx + 6, chestY - 8, cx + 4 + cw, 60, cx - 4 + cw, 62, cx - 12 + cw, 61, cx - 16 + cw, 58], P.cape);
+  for (let x = cx - 15 + cw; x < cx + 4 + cw; x += 3) p.line(x, 57, x + 1, 62 - ((x * 7) % 3), P.cape2, 1);
+  p.line(cx - 10, chestY - 7, cx - 15 + cw, 57, P.cape2, 1);
+  // back arm
+  const armBack = o.armBack || [110, 40];
+  const shB = [cx - 9, chestY - 6];
+  const [ebx, eby] = polar(shB[0], shB[1], armBack[0], 9);
+  const [hbx, hby] = polar(ebx, eby, armBack[0] + armBack[1], 8);
+  limb(p, shB[0], shB[1], ebx, eby, 3, shade(P.a1, 0.9));
+  limb(p, ebx, eby, hbx, hby, 2.6, shade(P.a1, 0.9));
+  shadeEllipse(p, hbx, hby, 4, 4, ramp.map((c) => shade(c, 0.75)));
+  // legs (armoured greaves)
+  const [lb, lf] = o.legs || [[-4, 4], [4, -4]];
+  const hipY = chestY + 12;
+  const leg = (dx, [kneeOff, footOff], dark) => {
+    const kx = cx + dx + kneeOff * 0.6, ky = hipY + 7;
+    const fx = cx + dx + footOff, fy = 61;
+    const col = dark ? shade(P.a1, 0.85) : P.a2;
+    limb(p, cx + dx, hipY, kx, ky, 3.4, col);
+    limb(p, kx, ky, fx, fy - 2, 3, col);
+    shadeEllipse(p, kx, ky, 2.6, 2.4, dark ? ramp.map((c) => shade(c, 0.8)) : ramp);
+    p.rect(Math.round(fx) - 4, 61, 9, 2, dark ? P.a0 : P.a1); p.rect(Math.round(fx) - 3, 60, 7, 1, dark ? P.a1 : P.a3);
+  };
+  leg(-5, lb, true);
+  leg(5, lf, false);
+  // torso: shaded breastplate + belt + skirt plates
+  shadeEllipse(p, cx, chestY, 12, 11, ramp);
+  fillPoly(p, [cx - 9, hipY - 3, cx + 9, hipY - 3, cx + 11, hipY + 5, cx - 11, hipY + 5], P.a1);
+  for (let x = cx - 9; x <= cx + 9; x += 4) p.line(x, hipY - 2, x - 1, hipY + 5, P.a0, 1);
+  p.rect(cx - 10, hipY - 4, 21, 2, P.a0); p.rect(cx - 2, hipY - 5, 5, 4, P.bone2); p.set(cx, hipY - 4, P.bone);
+  // ribs of bone over the chest + the abyssal core
+  for (let r = 0; r < 3; r++) { p.line(cx - 7 + r, chestY - 4 + r * 3, cx - 2, chestY - 3 + r * 3, P.bone2, 1); p.line(cx + 2, chestY - 3 + r * 3, cx + 7 - r, chestY - 4 + r * 3, P.bone2, 1); }
+  const coreR = o.coreR ?? 2.6;
+  fillEllipse(p, cx, chestY - 1, coreR + 1.2, coreR + 1.2, P.a0);
+  fillEllipse(p, cx, chestY - 1, coreR, coreR, P.core);
+  fillEllipse(p, cx - 0.5, chestY - 1.5, coreR * 0.45, coreR * 0.45, P.core2);
+  // head: horned skull helm
+  const hx = cx + 3 + (o.headDx || 0), hy = chestY - 16 + (o.headDy || 0);
+  shadeEllipse(p, hx, hy, 5.5, 5, ramp);
+  // horns sweep back and up
+  const horn = (sx, sy, dir) => {
+    let x = sx, y = sy;
+    for (let i = 0; i < 9; i++) {
+      const nx = x + dir * (i < 4 ? 1 : 0.6), ny = y - (i < 3 ? 0.6 : 1.1);
+      limb(p, x, y, nx, ny, i < 4 ? 1.3 : 0.7, i > 6 ? P.bone : P.bone2);
+      x = nx; y = ny;
+    }
+  };
+  horn(hx - 4, hy - 2, -1);
+  horn(hx + 3, hy - 3, 1);
+  // face: bone mask, glowing eyes, jaw
+  fillPoly(p, [hx - 1, hy - 2, hx + 6, hy - 2, hx + 6, hy + 3, hx + 3, hy + 5, hx, hy + 3], P.bone2);
+  fillPoly(p, [hx, hy - 2, hx + 6, hy - 2, hx + 5, hy + 1, hx + 1, hy + 1], P.bone);
+  const eyeC = o.eyesOff ? '#2a1a2a' : P.eye;
+  p.rect(Math.round(hx) + 1, Math.round(hy), 2, 1, eyeC); p.rect(Math.round(hx) + 4, Math.round(hy), 2, 1, eyeC);
+  if (!o.eyesOff) { p.set(Math.round(hx) + 2, Math.round(hy) - 1, P.core2); p.set(Math.round(hx) + 5, Math.round(hy) - 1, P.core2); }
+  p.rect(Math.round(hx) + 1, Math.round(hy) + 2 + (o.jaw || 0), 5, 1, P.a0);
+  for (let k = 0; k < 3; k++) p.set(Math.round(hx) + 2 + k * 1.5, Math.round(hy) + 2 + (o.jaw || 0), P.bone);
+  // spiked pauldrons
+  shadeEllipse(p, cx - 9, chestY - 7, 5.5, 4.5, ramp);
+  shadeEllipse(p, cx + 10, chestY - 7, 6, 5, ramp);
+  for (const [sx, dir] of [[cx - 12, -1], [cx - 8, -1], [cx + 9, 1], [cx + 13, 1]]) limb(p, sx, chestY - 10, sx + dir, chestY - 14, 0.8, P.bone);
+  // front arm + gauntlet fist
+  const armF = o.armFront || [70, 30];
+  const shF = [cx + 10, chestY - 5];
+  const [efx, efy] = polar(shF[0], shF[1], armF[0], 10);
+  const [hfx, hfy] = polar(efx, efy, armF[0] + armF[1], 9);
+  limb(p, shF[0], shF[1], efx, efy, 3.4, P.a2);
+  limb(p, efx, efy, hfx, hfy, 3, P.a2);
+  shadeEllipse(p, efx, efy, 2.6, 2.6, ramp);
+  shadeEllipse(p, hfx, hfy, 5, 4.6, [P.a0, P.fist, P.a2, P.a3]);
+  if (o.claws) for (let k = -1; k <= 1; k++) { const [cx2, cy2] = polar(hfx, hfy, armF[0] + armF[1] + k * 22, 7.5); limb(p, hfx, hfy, cx2, cy2, 0.6, P.bone); }
+  if (o.fire) {
+    fillEllipse(p, hfx, hfy - 7, 4.5, 5, '#c2410c'); fillEllipse(p, hfx, hfy - 7.5, 3.2, 3.8, '#fb923c'); fillEllipse(p, hfx, hfy - 7, 1.8, 2, '#fef08a');
+  }
+  if (o.glowFists) { p.set(Math.round(hfx), Math.round(hfy), P.core2); p.set(Math.round(hbx), Math.round(hby), P.core2); }
+  return p.outline(OUTLINE);
+}
+
+const GUARDIAN_POSES = [
+  /* 0 idle      */ { armFront: [75, 25], armBack: [105, 30] },
+  /* 1 idle 2    */ { bob: 1, armFront: [78, 22], armBack: [108, 28], coreR: 2.2, capeWave: 1 },
+  /* 2 walk      */ { armFront: [60, 30], armBack: [120, 25], legs: [[-6, -7], [5, 6]], capeWave: -1 },
+  /* 3 walk 2    */ { bob: 1, armFront: [95, 15], armBack: [90, 35], legs: [[-2, 4], [3, -5]], capeWave: 1 },
+  /* 4 slam up   */ { armFront: [-95, -15], armBack: [-85, 15], headDy: -1, coreR: 3.4, glowFists: true, legs: [[-7, -6], [7, 7]] },
+  /* 5 slam down */ { crouch: 6, armFront: [72, 4], armBack: [106, -4], headDy: 2, headDx: 1, jaw: 1, legs: [[-9, -9], [9, 9]], coreR: 3, glowFists: true },
+  /* 6 roar      */ { armFront: [-20, -30], armBack: [200, 30], headDy: -2, headDx: -1, jaw: 2, coreR: 3.6, capeWave: 2, legs: [[-7, -7], [7, 7]] },
+  /* 7 fire rain */ { armFront: [-80, 10], armBack: [140, 30], headDy: -2, fire: true, coreR: 3.2, jaw: 1 },
+  /* 8 swipe up  */ { armFront: [200, 40], armBack: [120, 20], lean: -2, headDx: -1, legs: [[-6, -8], [6, 5]] },
+  /* 9 swipe     */ { armFront: [10, 5], armBack: [150, 20], lean: 3, claws: true, legs: [[-8, -9], [8, 9]], jaw: 1 },
+  /* 10 stunned  */ { crouch: 3, armFront: [100, 20], armBack: [95, 25], headDy: 3, headDx: 2, coreR: 1.6, eyesOff: false },
+  /* 11 dormant  */ { crouch: 6, armFront: [90, -10], armBack: [100, -20], headDy: 5, headDx: 2, eyesOff: true, coreR: 1.2, legs: [[-9, -4], [9, 2]] },
+  /* 12 charge   */ { lean: 5, crouch: 2, armFront: [150, -30], armBack: [160, -20], headDx: 3, headDy: 3, legs: [[-9, -10], [8, 10]], capeWave: -3, coreR: 3 },
+];
+
+function buildEnemies() {
+  // Gelée: idle ×2, squash (telegraph), stretched (jump), splat (landing)
+  addSprite('enemy_slime', [
+    slimeFrame(7, 5.4), slimeFrame(7.6, 4.9), slimeFrame(8.6, 3.6, { squint: true, eyeDy: 1 }),
+    slimeFrame(5.6, 7), slimeFrame(9.2, 2.8, { drops: true, squint: true }),
+  ], 11, 16);
+
+  // Chauve-souris: 4 flight frames, 3 hanging frames (asleep ×2, waking)
+  S('enemy_bat', BAT_FLY.map(mirrorRows), BAT_PAL, 9, 6, OUTLINE);
+  S('enemy_bat_hang', BAT_HANG.map(mirrorRows), BAT_PAL, 9, 4, OUTLINE);
+
+  // Squelette: walk ×4, wind-up (bone raised), throw
+  const walk = [[[-24, 20], [22, 8]], [[-6, 30], [6, 2]], [[20, 10], [-22, 18]], [[6, 2], [-6, 30]]];
+  addSprite('enemy_skeleton', [
+    ...walk.map((legs, i) => skeletonFrame({ legs, bob: i % 2, frontArm: [90 - (i % 2 ? 20 : -15), -25], backArm: [90 + (i % 2 ? 20 : -15), 25] })),
+    skeletonFrame({ legs: [[-10, 5], [14, 6]], frontArm: [-120, -40], backArm: [120, 20], holdBone: 60, headDx: -1 }),
+    skeletonFrame({ legs: [[-14, 8], [20, 10]], frontArm: [-15, 10], backArm: [150, 10], headDx: 1 }),
+  ], 12, 29);
+
+  // Araignée: walk ×4, hanging ×2, dropping
+  addSprite('enemy_spider', [
+    ...[0, 1, 2, 3].map((ph) => spiderFrame({ pose: 'walk', phase: ph })),
+    spiderFrame({ pose: 'hang', phase: 0 }), spiderFrame({ pose: 'hang', phase: 1, dy: 1 }),
+    spiderFrame({ pose: 'drop' }),
+  ], 12, 9);
+
+  // Spectre: float ×4, attack
+  addSprite('enemy_ghost', [0, 1, 2, 3].map((ph) => ghostFrame(ph, false)).concat([ghostFrame(1, true)]), 11, 13);
+
+  // Diablotin: flap ×4, charging ×2 (fireball grows), cast
+  addSprite('enemy_imp', [
+    ...IMP_WINGS.map((w, i) => impFrame({ wing: w, bob: i === 2 ? 1 : 0 })),
+    impFrame({ wing: -40, ball: 1.4 }), impFrame({ wing: 10, ball: 2.2, bob: 1 }),
+    impFrame({ wing: -60, cast: true }),
+  ], 12, 11);
+
+  // Golem: walk ×4, wind-up (stomp), charge ×2, stunned
+  addSprite('enemy_golem', [
+    golemFrame({ legs: [-2, 2], arms: [110, 70] }), golemFrame({ legs: [0, 0], arms: [100, 80], bob: 1 }),
+    golemFrame({ legs: [2, -2], arms: [85, 100] }), golemFrame({ legs: [0, 0], arms: [95, 90], bob: 1 }),
+    golemFrame({ legs: [-3, 3], arms: [-100, -80], crouch: 2, headDy: 1 }),
+    golemFrame({ legs: [-4, 3], arms: [160, 20], lean: 3, headDx: 2, headDy: 3 }),
+    golemFrame({ legs: [3, -3], arms: [150, 30], lean: 3, headDx: 2, headDy: 3, bob: 1 }),
+    golemFrame({ legs: [-1, 1], arms: [120, 100], crouch: 2, headDy: 2, dim: true, stars: true }),
+  ], 17, 35);
+
+  // Le Gardien: 13 poses (see enemies.js _frame), normal and enraged palettes
+  addSprite('enemy_guardian', GUARDIAN_POSES.map((o) => guardianFrame(o, GUARD.normal)), 32, 63);
+  addSprite('enemy_guardian_rage', GUARDIAN_POSES.map((o) => guardianFrame({ ...o, coreR: (o.coreR ?? 2.6) + 0.8 }, GUARD.rage)), 32, 63);
+
+  for (const n of ['enemy_slime', 'enemy_bat', 'enemy_bat_hang', 'enemy_skeleton', 'enemy_spider', 'enemy_ghost', 'enemy_imp', 'enemy_golem', 'enemy_guardian', 'enemy_guardian_rage']) addTintVariants(n);
+
+  // ---- projectiles & fx
+  // spinning bone
+  addSprite('proj_bone', [0, 45, 90, 135].map((a) => {
+    const p = new Pix(11, 11);
+    const [x0, y0] = polar(5, 5, a, -3.5), [x1, y1] = polar(5, 5, a, 3.5);
+    p.line(x0, y0, x1, y1, BONE.mid, 1);
+    for (const [x, y] of [[x0, y0], [x1, y1]]) { p.set(Math.round(x), Math.round(y), BONE.hi); p.set(Math.round(x + Math.cos((a + 90) * DEG)), Math.round(y + Math.sin((a + 90) * DEG)), BONE.hi); }
+    return p.outline(OUTLINE);
+  }), 5, 5);
+  // fireball with a flickering trail (faces right)
+  addSprite('proj_fireball', [0, 1, 2].map((f) => {
+    const p = new Pix(14, 10);
+    for (let k = 0; k < 4; k++) fillEllipse(p, 7 - k * 1.8, 5 + ((k + f) % 2 ? 0.6 : -0.6), 2.4 - k * 0.45, 2 - k * 0.35, k < 2 ? '#c2410c' : '#7a1a08');
+    fillEllipse(p, 9, 5, 3.3, 3, '#c2410c'); fillEllipse(p, 9.3, 5, 2.4, 2.2, '#fb923c'); fillEllipse(p, 9.8, 4.8, 1.3, 1.2, '#fef08a');
+    p.set(10, 4, '#ffffff');
+    if (f === 1) p.set(3, 3, '#fb923c'); if (f === 2) p.set(2, 7, '#fb923c');
+    return p;
+  }), 9, 5);
+  // abyssal shockwave running along the floor (anchor = bottom centre)
+  addSprite('proj_shock', [0, 1, 2].map((f) => {
+    const p = new Pix(14, 18);
+    const h = 13 + (f === 1 ? 2 : f === 2 ? -1 : 0);
+    fillPoly(p, [2, 17, 6, 17 - h, 8, 17 - h + 2, 12, 17], '#5a2a8a');
+    fillPoly(p, [4, 17, 7, 18 - h, 8, 19 - h, 10, 17], '#a45ee8');
+    p.line(7, 19 - h, 8, 15, '#e3c4ff', 1);
+    p.set(1 + f, 16, '#a45ee8'); p.set(12 - f, 15, '#e3c4ff');
+    return p;
+  }), 7, 17);
+  // falling meteor (anchor = the burning head)
+  addSprite('proj_meteor', [0, 1].map((f) => {
+    const p = new Pix(12, 18);
+    for (let k = 0; k < 5; k++) fillEllipse(p, 6 + ((k + f) % 2 ? 0.7 : -0.7), 12 - k * 2.2, 2.6 - k * 0.4, 1.8, k < 2 ? '#fb923c' : '#c2410c');
+    fillEllipse(p, 6, 13, 3.4, 3.4, '#7a1a08'); fillEllipse(p, 6, 13, 2.6, 2.6, '#3b3031'); p.set(5, 12, '#fb923c'); p.set(7, 14, '#ff8a1f');
+    p.set(4 + f, 4, '#fef08a');
+    return p.outline('#2a0a04');
+  }), 6, 13);
+  // fire-rain warning sigil on the ceiling
+  addSprite('fx_warn', [0, 1].map((f) => new Pix(11, 9).rows([
+    '...rrrrr...', '..r.....r..', '.r..rRr..r.', 'r..rRWRr..r', '.r..rRr..r.', '..r.....r..', '...rrrrr...', '.....r.....', '.....R.....',
+  ].map((r) => (f ? r.replace(/r/g, 'R') : r)), { r: '#8a1a10', R: '#ff5030', W: '#fff0a0' })), 5, 3);
 }
 
 // ------------------------------------------------------------------ backdrop (surface parallax)

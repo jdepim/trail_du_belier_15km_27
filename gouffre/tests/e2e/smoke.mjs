@@ -274,20 +274,32 @@ try {
     assert.equal((await G(() => window.__gouffre.info())).scale, 5);
   });
 
-  await step('death leads to the death screen and a fresh run', async () => {
+  await step('death: summary with the lost loot, then a new expedition (new seed, empty backpack, no relics)', async () => {
     const seed0 = (await G(() => window.__gouffre.gen())).seed;
-    await G(() => window.__gouffre.game.player.takeDamage(9999));
+    const deaths0 = (await G(() => window.__gouffre.save())).stats.deaths;
+    await G(() => { const g = window.__gouffre; g.giveOre('iron', 4); g.game.run.gold = 9; g.giveRelic('magnet'); });
+    // (the Heart visit above may have left i-frames from the Guardian: clear them)
+    await G(() => { const p = window.__gouffre.game.player; p.iframes = 0; p.takeDamage(9999, null, { cause: 'guardian' }); });
     assert.equal((await player()).dead, true);
     await waitFor(() => G(() => window.__gouffre.state === 'DEAD'), 4000);
     await settle(150);
+    const txt = await G(() => document.querySelector('[data-ui=death]').innerText);
+    assert.match(txt, /Mort à −\d+ m/);
+    assert.match(txt, /Gardien/, 'cause of death');
+    assert.match(txt, /Fer ×4/, 'lost ore listed');
+    assert.match(txt, /Aimant/, 'lost relic listed');
+    assert.equal((await G(() => window.__gouffre.save())).stats.deaths, deaths0 + 1, 'death saved');
     await shot('12-death.png');
-    await page.tap('text=Redescendre');
+    await page.tap('[data-act=restart]');
     await waitFor(() => G(() => window.__gouffre.state === 'PLAYING'));
     const p = await player();
     assert.equal(p.dead, false);
     assert.equal(p.hp, p.maxHp);
     assert.ok(p.feetY <= SURFACE_Y * TILE, 'back at the camp');
     assert.notEqual((await G(() => window.__gouffre.gen())).seed, seed0, 'new mine');
+    const r = await G(() => window.__gouffre.run());
+    assert.deepEqual([r.bagCount, r.gold, r.relics.length], [0, 0, 0], 'empty backpack, no run gold, no relics');
+    assert.equal((await G(() => window.__gouffre.stats())).magnetMul, 1, 'relic effects gone');
   });
 
   // ------------------------------------------------------------ regressions (review fixes)
@@ -470,6 +482,305 @@ try {
     assert.equal(r.exposed, 0);
     await shot('13-vestibule.png');
     await G(() => window.__gouffre.freeze(false));
+  });
+
+  // ------------------------------------------------------------ enemies, combat, boss (step 2a)
+
+  /** Carve a lit 6-tile-high gallery whose floor is row ty + 1 (in page context). */
+  const carveGallery = (ty) => G((ty) => {
+    const g = window.__gouffre;
+    for (let tx = 3; tx <= 68; tx++) { for (let y = ty - 5; y <= ty; y++) g.setTile(tx, y, 'air'); g.setTile(tx, ty + 1, 'stone'); g.setTile(tx, ty - 6, 'stone'); }
+    for (let tx = 8; tx <= 66; tx += 7) g.setTile(tx, ty - 3, 'torch');
+  }, ty);
+
+  await step('combat: strike a spawned enemy to death, its coins go to the run gold', async () => {
+    await G(() => { const g = window.__gouffre; g.newRun(12345); g.setGod(false); g.clearEnemies(); });
+    await carveGallery(40);
+    await G(() => { const g = window.__gouffre; g.teleport(20, 40); g.game.player.facing = 1; });
+    await settle(300);
+    const e = await G(() => window.__gouffre.spawnEnemy('slime', 34, 0, { cd: 99 }));
+    assert.equal(e.key, 'slime');
+    assert.ok(e.hp > 10 && e.hp === e.maxHp, `depth-scaled hp ${e.hp}`);
+    const gold0 = (await G(() => window.__gouffre.run())).gold;
+    await inject({ x: 1, y: 0, attack: true });
+    await waitFor(async () => { const l = await G(() => window.__gouffre.enemies()); return l.length === 1 && l[0].hp < l[0].maxHp; }, 3000, 16);
+    await shot('15-combat-hit.png');
+    await waitFor(async () => (await G(() => window.__gouffre.enemies())).length === 0, 6000, 30);
+    await clearInput();
+    const r0 = await G(() => window.__gouffre.run());
+    assert.equal(r0.kills, 1, 'kill counted');
+    await settle(150);
+    await shot('15b-combat-coins.png');
+    // walk over whatever coins bounced out of the magnet's reach
+    const t0 = Date.now();
+    for (;;) {
+      const s2 = await G(() => ({ pk: window.__gouffre.pickups().filter((q) => q.kind === 'coin'), gold: window.__gouffre.run().gold, p: window.__gouffre.player() }));
+      if (!s2.pk.length && s2.gold > gold0) break;
+      if (Date.now() - t0 > 6000) throw new Error(`coins not collected: ${JSON.stringify(s2)}`);
+      if (s2.pk.length) await inject({ x: s2.pk[0].x > s2.p.cx ? 1 : -1, y: 0 });
+      await page.waitForTimeout(60);
+    }
+    await clearInput();
+    const r1 = await G(() => window.__gouffre.run());
+    assert.ok(r1.gold > gold0, `run gold ${gold0} -> ${r1.gold}`);
+  });
+
+  await step('combat: an enemy hurts the player (HP down, knockback, i-frames)', async () => {
+    await G(() => { window.__gouffre.game.player.hp = window.__gouffre.game.player.stats.maxHp; });
+    const hp0 = (await player()).hp;
+    await G(() => window.__gouffre.spawnEnemy('skeleton', 4, 0, { cd: 99 }));
+    const hit = await waitFor(async () => { const p = await player(); return p.hp < hp0 ? p : null; }, 2000, 16);
+    assert.ok(hit.iframes > 0.6, 'i-frames after the hit');
+    await shot('15c-hurt.png');
+    await settle(250);
+    assert.equal((await player()).hp, hit.hp, 'no damage during i-frames');
+    await G(() => window.__gouffre.clearEnemies());
+  });
+
+  await step('every layer has its own enemies (screenshots)', async () => {
+    const stops = [
+      [26, ['slime', 'bat', 'slime'], '16-enemies-terre.png'],
+      [62, ['skeleton', 'bat', 'slime', 'skeleton'], '17-enemies-catacombes.png'],
+      [132, ['spider', 'ghost', 'bat', 'spider'], '18-enemies-cristaux.png'],
+      [214, ['imp', 'golem', 'ghost', 'imp'], '19-enemies-abysse.png'],
+    ];
+    await G(() => window.__gouffre.setGod(true));
+    for (const [d, keys, name] of stops) {
+      const ty = SURFACE_Y + d;
+      await G(() => window.__gouffre.clearEnemies());
+      await carveGallery(ty);
+      const made = await G(({ ty, keys }) => {
+        const g = window.__gouffre;
+        g.freeze(true);
+        g.teleport(14, ty);
+        const out = keys.map((k, i) => g.spawnEnemy(k, 34 + i * 46, 0, { cd: 99 }));
+        // one hanger on the ceiling (bat asleep / spider on its thread) when the layer has one
+        const hanger = keys.find((k) => k === 'bat' || k === 'spider');
+        if (hanger) out.push(g.spawnEnemy(hanger, -40, 0, { anchor: 'ceiling', y: (ty - 5) * 16 }));
+        g.step(24);
+        return out;
+      }, { ty, keys });
+      assert.ok(made.every(Boolean), 'all spawned');
+      const live = await G(() => window.__gouffre.enemies());
+      assert.ok(live.length >= keys.length, `${live.length} enemies alive at -${d} m`);
+      for (const e of live) assert.equal(await G((e) => window.__gouffre.game.world.rectSolid(e.x, e.y, e.w, e.h) && e.key !== 'ghost', e), false, `${e.key} not in rock`);
+      await shot(name);
+      await G(() => window.__gouffre.freeze(false));
+    }
+    await G(() => window.__gouffre.clearEnemies());
+  });
+
+  await step('boss: the Guardian wakes in the Heart, gates seal, HP bar; 3 phases; death hook', async () => {
+    const gen = await G(() => window.__gouffre.gen());
+    const a = gen.arena;
+    await G((a) => { const g = window.__gouffre; g.setGod(true); g.clearEnemies(); g.teleport(a.x0 + 20, a.y1); }, a);
+    const b0 = await waitFor(async () => { const b = await G(() => window.__gouffre.boss()); return b.enemy && b.enemy.state === 'intro' ? b : null; }, 2500, 30);
+    assert.equal(b0.gatesSealed, true, 'arena sealed');
+    assert.equal((await G((e) => window.__gouffre.tile(e.x0, e.y), a.entrance)).key, 'gate');
+    assert.ok(b0.bar && b0.bar.name === "Le Gardien de l'Abysse", 'boss bar with its name');
+    await settle(1400);
+    // the bar is really drawn: sample the internal canvas at its left end
+    const px = await G(() => {
+      const game = window.__gouffre.game, R = game.renderer;
+      const bw = Math.min(170, Math.round(R.W * 0.38));
+      const x = Math.round(R.W / 2 - bw / 2) + 3, y = Math.max(5, game.safe.t + 4) + 12;
+      return Array.from(R.ctx.getImageData(x, y, 1, 1).data);
+    });
+    assert.ok(px[0] > 100 && px[0] > px[1] + 40, `boss bar pixel ${px}`);
+    await shot('20-boss-intro.png');
+    await waitFor(async () => (await G(() => window.__gouffre.boss().enemy.state)) !== 'intro', 3000);
+    await settle(900);
+    await shot('21-boss-fight.png');
+    await G(() => window.__gouffre.hurtBoss(window.__gouffre.game.enemies.boss.maxHp * 0.36));
+    assert.equal((await G(() => window.__gouffre.boss())).enemy.phase, 1);
+    await settle(2600);
+    await shot('22-boss-phase2.png');
+    await waitFor(async () => (await G(() => window.__gouffre.boss().enemy.state)) !== 'phase', 3000);
+    await G(() => window.__gouffre.hurtBoss(window.__gouffre.game.enemies.boss.maxHp * 0.34));
+    assert.equal((await G(() => window.__gouffre.boss())).enemy.phase, 2);
+    await settle(2600);
+    await shot('23-boss-rage.png');
+    await waitFor(async () => (await G(() => window.__gouffre.boss().enemy.state)) !== 'phase', 3000);
+    await G(() => window.__gouffre.hurtBoss(window.__gouffre.game.enemies.boss.hp + 10));
+    assert.equal((await G(() => window.__gouffre.boss())).enemy.state, 'dying');
+    await settle(1200);
+    await shot('24-boss-dying.png');
+    await waitFor(async () => (await G(() => window.__gouffre.run())).bossDefeated, 5000, 50);
+    const end = await G(() => window.__gouffre.boss());
+    assert.equal(end.defeated, true);
+    assert.equal(end.gatesSealed, false, 'gates reopen');
+    assert.equal(end.bar, null, 'bar gone');
+    assert.equal((await G((e) => window.__gouffre.tile(e.x0, e.y), a.entrance)).key, 'air');
+    await settle(700);
+    await shot('25-boss-defeated.png');
+    await G(() => window.__gouffre.setGod(false));
+  });
+
+  // ------------------------------------------------------------ economy & meta loop (step 2b)
+
+  await step('victory: the Guardian\'s death opens the victory screen; "Continuer (NG+ 1)" starts a harder mine', async () => {
+    await waitFor(() => G(() => window.__gouffre.state === 'VICTORY'), 6000, 50);
+    await settle(200);
+    const txt = await G(() => document.querySelector('[data-ui=victory]').innerText);
+    assert.match(txt, /Gardien/);
+    assert.match(txt, /NG\+ 1/);
+    const sv = await G(() => window.__gouffre.save());
+    assert.equal(sv.stats.victories, 1, 'victory saved');
+    assert.ok(sv.gold > 0, 'the Guardian\'s treasure is banked');
+    await shot('30-victory.png');
+    const seed0 = (await G(() => window.__gouffre.gen())).seed;
+    await page.tap('[data-act=ngplus]');
+    await waitFor(() => G(() => window.__gouffre.state === 'PLAYING'));
+    const r = await G(() => window.__gouffre.run());
+    assert.equal(r.ngPlus, 1);
+    assert.notEqual(r.seed, seed0);
+    assert.equal((await G(() => window.__gouffre.save())).ngPlus, 1);
+    const e = await G(() => window.__gouffre.spawnEnemy('slime', 60, 0, { cd: 99 }));
+    assert.ok(e.maxHp >= Math.round(16 * 1.5), `NG+ slime hp ${e.maxHp}`);
+    await G(() => { window.__gouffre.clearEnemies(); window.__gouffre.setGod(false); });
+  });
+
+  await step('ore: mined chunks fill the backpack, banking at the camp turns them into saved gold (survives a reload)', async () => {
+    await G(() => { const g = window.__gouffre; g.newRun(424242); g.setGod(true); g.clearEnemies(); });
+    await carveGallery(22);
+    await G(() => {
+      const g = window.__gouffre;
+      g.teleport(20, 22); g.game.player.facing = 1;
+      g.setTile(21, 22, 'copper'); g.setTile(21, 21, 'copper');
+    });
+    await settle(250);
+    await inject({ x: 1, y: 0, attack: true });
+    await waitFor(async () => (await G(() => window.__gouffre.run())).bagCount >= 2, 8000, 50);
+    await clearInput();
+    const r0 = await G(() => window.__gouffre.run());
+    assert.deepEqual(r0.bag, { copper: 2 });
+    assert.equal(r0.bagValue, 4);
+    await settle(200);
+    await shot('26-ore-backpack.png');
+    const gold0 = (await G(() => window.__gouffre.save())).gold;
+    await G(() => { window.__gouffre.game.run.gold = 6; window.__gouffre.teleport(31, 13); });
+    await waitFor(async () => (await G(() => window.__gouffre.run())).bagCount === 0, 2000, 30);
+    const sv = await G(() => window.__gouffre.save());
+    assert.equal(sv.gold, gold0 + 4 + 6, 'bag value + run gold banked');
+    assert.equal(await G(() => window.__gouffre.game.hud.tallyActive), true, 'tally shown');
+    await settle(900);
+    await shot('27-bank-tally.png');
+    const stored = await G(() => JSON.parse(localStorage.getItem('gouffre.save.v1')));
+    assert.equal(stored.gold, sv.gold, 'saved immediately');
+    assert.ok(stored.stats.trips >= 1);
+    await page.reload();
+    await page.waitForSelector('button[data-act=play]', { timeout: 5000 });
+    assert.equal((await G(() => window.__gouffre.save())).gold, sv.gold, 'banked gold persists across a reload');
+    const label = await G(() => document.querySelector('button[data-act=play]').innerText);
+    assert.match(label, /Continuer/i);
+    assert.match(label, /Or banqué/);
+    await settle(200);
+    await shot('28-title-continue.png');
+    await page.tap('button[data-act=play]');
+    await waitFor(() => G(() => window.__gouffre.state === 'PLAYING'));
+  });
+
+  await step('Forge: buying an upgrade with touch spends banked gold and applies it at once', async () => {
+    await G(() => { const g = window.__gouffre; g.setGod(true); g.clearEnemies(); g.setBank(500); });
+    const gen = await G(() => window.__gouffre.gen());
+    const tx = Math.floor(gen.camp.forge.npcX / TILE) + 1;
+    await G((tx) => window.__gouffre.teleport(tx, 13), tx);
+    const ctxBtn = await waitFor(async () => { const l = await G(() => window.__gouffre.input.layout()); return l.interact.hidden ? null : l.interact; }, 1500);
+    await touch('touchStart', [{ x: ctxBtn.x, y: ctxBtn.y, id: 21 }]);
+    await touch('touchEnd', []);
+    await waitFor(() => G(() => window.__gouffre.state === 'SHOP'));
+    const cap0 = (await G(() => window.__gouffre.stats())).bagCapacity;
+    const cost = await G(() => window.__gouffre.game.save.upgrades.bag === 0 ? 15 : null);
+    assert.equal(cost, 15);
+    await page.tap('[data-buy=bag]');
+    await waitFor(async () => (await G(() => window.__gouffre.save())).upgrades.bag === 1, 1500);
+    const sv = await G(() => window.__gouffre.save());
+    assert.equal(sv.gold, 500 - cost);
+    assert.ok((await G(() => window.__gouffre.stats())).bagCapacity > cap0, 'bag capacity applied');
+    assert.equal((await G(() => JSON.parse(localStorage.getItem('gouffre.save.v1')))).upgrades.bag, 1, 'saved');
+    // unaffordable upgrades are disabled, the card shows the new level
+    await G(() => window.__gouffre.setBank(10));
+    assert.equal(await G(() => document.querySelector('[data-buy=pick]').disabled), true);
+    assert.equal(await G(() => document.querySelectorAll('[data-up=bag] .pip.on').length), 1);
+    await G(() => window.__gouffre.setBank(500 - 15));
+    await settle(250);
+    await shot('29-forge.png');
+    await page.keyboard.press('Escape');
+    await waitFor(() => G(() => window.__gouffre.state === 'PLAYING'), 1500);
+  });
+
+  await step('chest: opening a chest (touch "Ouvrir") grants a relic shown in the HUD', async () => {
+    const i = await G(() => {
+      const g = window.__gouffre, cs = g.game.entities.chests;
+      let best = 0;
+      for (let k = 0; k < cs.length; k++) if (cs[k].depth < cs[best].depth) best = k;
+      cs[best].kind = 'relic';
+      return best;
+    });
+    await G((i) => { const g = window.__gouffre; g.teleportToChest(i); g.clearEnemies(); }, i);
+    const btn = await waitFor(async () => { const l = await G(() => window.__gouffre.input.layout()); return l.interact.hidden ? null : l.interact; }, 2000);
+    assert.equal(await G(() => document.querySelector('.tbtn-ctx').textContent), 'Ouvrir');
+    await settle(300);
+    const hudPx = () => G(() => {
+      const game = window.__gouffre.game, R = game.renderer;
+      const L = Math.max(6, game.safe.l + 4), T = Math.max(5, game.safe.t + 4);
+      const d = R.ctx.getImageData(L, T + 23, 10, 10).data;
+      let bright = 0;
+      for (let k = 0; k < d.length; k += 4) if (d[k] + d[k + 1] + d[k + 2] > 420) bright++;
+      return bright;
+    });
+    const before = await hudPx();
+    await touch('touchStart', [{ x: btn.x, y: btn.y, id: 22 }]);
+    await touch('touchEnd', []);
+    await waitFor(async () => (await G(() => window.__gouffre.run())).relics.length === 1, 1500);
+    assert.equal((await G(() => window.__gouffre.chests()))[i].opened, true);
+    await settle(400);
+    const after = await hudPx();
+    assert.ok(after > before + 6, `relic icon drawn in the HUD (${before} -> ${after} bright px)`);
+    await shot('31-relic-hud.png');
+  });
+
+  await step('pause: "Recommencer l\'expédition" asks, then counts as a death (summary) and regenerates', async () => {
+    const seed0 = (await G(() => window.__gouffre.gen())).seed;
+    const deaths0 = (await G(() => window.__gouffre.save())).stats.deaths;
+    const lay = await G(() => window.__gouffre.input.layout());
+    await touch('touchStart', [{ x: lay.pause.x, y: lay.pause.y, id: 23 }]);
+    await touch('touchEnd', []);
+    await waitFor(() => G(() => window.__gouffre.state === 'PAUSED'));
+    await page.tap('[data-act=abandon]');
+    await page.waitForSelector('[data-act=abandon-confirm]');
+    await shot('32-abandon-confirm.png');
+    await page.tap('[data-act=abandon-confirm]');
+    await waitFor(() => G(() => window.__gouffre.state === 'DEAD'));
+    assert.match(await G(() => document.querySelector('[data-ui=death]').innerText), /abandonnée/i);
+    assert.equal((await G(() => window.__gouffre.save())).stats.deaths, deaths0 + 1);
+    await page.tap('[data-act=restart]');
+    await waitFor(() => G(() => window.__gouffre.state === 'PLAYING'));
+    assert.notEqual((await G(() => window.__gouffre.gen())).seed, seed0);
+  });
+
+  await step('reload keeps the save; settings erase it only after a confirmation', async () => {
+    await page.reload();
+    await page.waitForSelector('button[data-act=play]', { timeout: 5000 });
+    const sv = await G(() => window.__gouffre.save());
+    assert.equal(sv.upgrades.bag, 1);
+    assert.equal(sv.stats.victories, 1);
+    assert.equal(sv.ngPlus, 1);
+    assert.ok(sv.stats.deaths >= 2 && sv.stats.runs >= 3);
+    await page.tap('[data-act=settings]');
+    await page.tap('[data-act=erase]');
+    await page.waitForSelector('[data-act=erase-confirm]');
+    assert.equal((await G(() => window.__gouffre.save())).gold, sv.gold, 'nothing erased before confirming');
+    await shot('33-erase-confirm.png');
+    await page.tap('[data-act=erase-confirm]');
+    const after = await G(() => window.__gouffre.save());
+    assert.deepEqual([after.gold, after.upgrades.bag, after.stats.victories, after.ngPlus], [0, 0, 0, 0]);
+    assert.equal((await G(() => JSON.parse(localStorage.getItem('gouffre.save.v1')))).gold, 0);
+    await page.tap('[data-act=back]');
+    assert.match(await G(() => document.querySelector('button[data-act=play]').innerText), /Jouer/i);
+    await page.tap('button[data-act=play]');
+    await waitFor(() => G(() => window.__gouffre.state === 'PLAYING'));
+    assert.equal((await G(() => window.__gouffre.stats())).bagCapacity, 10, 'upgrades reset');
   });
 
   await step('zero console errors and page errors', async () => {

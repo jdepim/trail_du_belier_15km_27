@@ -105,6 +105,10 @@ export const PLAYER = {
   // lava
   lavaDamage: 14,
   lavaBounce: 300,
+  pogoVel: 230,            // upward bounce when a downward strike hits an enemy in mid-air
+  // relic effects (meta.RELICS)
+  airJumpMul: 0.9,         // double jump launch speed (× jumpVel)
+  glideFall: 62,           // max fall speed while gliding (Plume relic, jump held)
   // misc
   lanternRadius: 6.5,      // tiles
   bagCapacity: 10,
@@ -184,8 +188,12 @@ export const ENEMY_SCALING = { hpPerM: 1 / 60, dmgPerM: 1 / 80, ngPlusMul: 1.5 }
 // Base stats before depth scaling (hp × (1 + d/60), dmg × (1 + d/80), × 1.5 in NG+).
 // w/h = hitbox px; gold = base coin value (× (1 + d × DROPS.goldPerM));
 // kbResist 0..1 = fraction of the strike knockback ignored; projDmg = base projectile damage.
-// Layer 1 is tuned for a new player (60 HP, 10 strike damage): bats die in one hit,
-// slimes in two or three, and each hit taken costs about a tenth of the HP bar.
+// Balance (player: 60 HP, 10 strike damage at tier 0, +4 per pickaxe level):
+//   layer 1 (d 9-39)   slime 18-26 hp (2-3 hits), bat 9-12 hp (1-2 hits), ~6 dmg per hit taken
+//   layer 2 (d 40-99)  skeleton 37-58 hp, 11-16 dmg, bones 9-13
+//   layer 3 (d 100-179) spider / ghost 50-80 hp, 16-26 dmg (pick lv2 expected)
+//   layer 4 (d 180-259) imp 80-105 hp, golem 190-255 hp, 22-42 dmg (upgraded player)
+//   the Guardian (d 272): ~830 hp, 22-35 dmg per hit
 export const ENEMY_STATS = {
   slime: { hp: 16, dmg: 5, speed: 68, w: 12, h: 10, gold: 2, kbResist: 0 },
   bat: { hp: 8, dmg: 4, speed: 58, w: 12, h: 9, gold: 2, kbResist: 0 },
@@ -193,16 +201,16 @@ export const ENEMY_STATS = {
   spider: { hp: 18, dmg: 8, speed: 92, w: 14, h: 9, gold: 5, kbResist: 0.1 },
   ghost: { hp: 20, dmg: 7, speed: 34, w: 14, h: 18, gold: 6, kbResist: 0 },
   imp: { hp: 20, dmg: 6, speed: 64, w: 12, h: 14, gold: 7, kbResist: 0.1, projDmg: 7 },
-  golem: { hp: 60, dmg: 10, speed: 20, w: 22, h: 28, gold: 12, kbResist: 0.85 },
-  guardian: { hp: 150, dmg: 5, speed: 34, w: 34, h: 46, gold: 150, kbResist: 1, projDmg: 6 },
+  golem: { hp: 48, dmg: 10, speed: 20, w: 22, h: 28, gold: 12, kbResist: 0.85 },
+  guardian: { hp: 150, dmg: 5, speed: 34, w: 34, h: 46, gold: 110, kbResist: 1, projDmg: 6 },
 };
 
 // Behaviour tuning (ranges in px, times in s, speeds in px/s).
 export const ENEMY_AI = {
   gravity: 900,
   maxFall: 380,
-  knockbackX: 170,          // strike knockback (× (1 - kbResist))
-  knockbackY: 120,
+  knockbackX: 130,          // strike knockback (× (1 - kbResist))
+  knockbackY: 110,
   hitStun: 0.28,            // no steering / no contact damage after being struck
   killHitStop: 0.07,
   contactShrink: 2,         // px trimmed from each side of an enemy box for contact damage
@@ -212,14 +220,14 @@ export const ENEMY_AI = {
   spider: { hang: 6, triggerX: 18, triggerY: 150, shake: 0.28, pause: [0.35, 0.8], run: [0.9, 1.6] },
   ghost: { aggro: 170, drift: 0.9, alpha: 0.62 },
   imp: { aggro: 190, keepDist: 72, hover: 34, windup: 0.65, cooldown: [2.1, 2.9], fireSpeed: 118 },
-  golem: { sightX: 150, sightY: 14, windup: 0.75, chargeSpeed: 150, chargeTime: 1.5, stun: 1.1, chargeDmgMul: 1.5 },
+  golem: { sightX: 150, sightY: 14, windup: 0.75, chargeSpeed: 150, chargeTime: 1.5, stun: 1.1, chargeDmgMul: 1.35 },
   projLife: 4,
 };
 
 // Off-screen respawn around the player (by the layer of the spawn tile).
 export const ENEMY_SPAWNING = {
-  interval: [9, 8, 7, 6],   // s between attempts, per layer of the player
-  localCap: [4, 5, 6, 6],   // max non-boss enemies in the active zone, per layer
+  interval: [12, 9, 8, 7],  // s between attempts, per layer of the player
+  localCap: [3, 5, 6, 6],   // max non-boss enemies in the active zone, per layer
   globalCap: 72,            // live enemies in the whole mine
   minDistTiles: 9,          // never closer than this to the player
   maxDistTiles: 22,
@@ -239,14 +247,35 @@ export const DROPS = {
   heartChanceLow: 0.25,     // when the player is below 35 % HP
   heartHeal: 15,
   crystalHeal: 20,          // life crystal heart
-  magnetRadius: 46,
+  magnetRadius: 56,
   magnetDelay: 0.32,        // s before a fresh drop can be pulled
   magnetAccel: 1100,
   magnetMaxSpeed: 280,
   gravity: 720,
   bounce: 0.45,
   life: 40,                 // s before an uncollected pickup vanishes (blinks the last 3 s)
+  oreLife: 300,             // ore chunks wait much longer (bag full: come back after banking)
   maxPickups: 96,
+  fullToastCooldown: 2.5,   // s between two "Sac plein !" toasts
+  activeScreens: 1.5,       // pickups farther than this (view sizes) from the camera sleep
+};
+
+// ---------------------------------------------------------------- economy (§2, §7)
+// Ore chunks go to the backpack (1 unit each, worth the tile's value); coins go to
+// the run gold. Both are banked in the camp zone (feet at or above camp.bankY) or
+// lost on death (minus the Bourse de secours share). Upgrade costs live in
+// meta.UPGRADES and were set with `node tools/economy.mjs` (curve in NOTES-core.md).
+export const ECONOMY = {
+  oreChunksPerTile: 1,
+  chestGoldBase: 16,        // gold chest value = base × (1 + depth × chestGoldPerM), in coins
+  chestGoldPerM: 1 / 25,
+  chestCoins: 8,
+  chestInteract: 18,        // px: horizontal reach of the "Ouvrir" button around a chest
+  // relic rarity weights per chest layer [common, uncommon, rare] (deeper = rarer relics)
+  relicWeights: [[6, 3, 1], [5, 3, 2], [4, 3, 3], [3, 3, 4]],
+  vampireHeal: [3, 0.04],   // Vampirisme: heal 3 + 4 % max HP per kill
+  victoryDelay: 3.2,        // s between the Guardian's death and the victory screen
+  deathDelay: 1.6,          // s of death animation before the summary
 };
 
 // Le Gardien de l'Abysse (boss, DESIGN §6). Damage values are base values (depth-scaled).

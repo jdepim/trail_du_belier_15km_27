@@ -1,6 +1,6 @@
 // GOUFFRE — boot, resize, fixed 60 Hz loop, state machine and game-level hooks.
 // States: TITLE / PLAYING / PAUSED / SHOP / DEAD / VICTORY.
-import { FIXED_DT, MAX_FRAME_DT, TILE, layerAtDepth } from './config.js';
+import { FIXED_DT, MAX_FRAME_DT, TILE, ECONOMY, layerAtDepth } from './config.js';
 import { TILES, TILE_ID, SOLID } from './tiles.js';
 import { generateWorld } from './worldgen.js';
 import { createInput } from './input.js';
@@ -12,7 +12,7 @@ import { Hud } from './hud.js';
 import { Player } from './player.js';
 import { EnemyManager } from './enemies.js';
 import { EntityManager } from './entities.js';
-import { loadSave, saveGame, applyUpgrades } from './meta.js';
+import { loadSaveEx, saveGame, applyUpgrades, bankLoot, settleDeath, clearSave, buyUpgrade, storageAvailable } from './meta.js';
 import { createUI } from './ui.js';
 import { loadSprites, makeIcon } from './sprites.js';
 import { parseFlags, installDebug } from './debug.js';
@@ -33,6 +33,11 @@ const game = {
   safe: { l: 0, r: 0, t: 0, b: 0 },
   hitStopTicks: 0,
   deathT: -1,
+  victoryT: -1,
+  runActive: false,     // an expedition is under way (the title offers "Continuer")
+  deathInfo: null,      // summary of the last death (death screen)
+  victoryInfo: null,    // summary of the last victory (victory screen)
+  saveStatus: 'ok',     // 'ok' | 'new' | 'corrupt' | 'unavailable'
 };
 
 // Hit-stop is counted in whole fixed ticks (at least one): comparing float
@@ -62,32 +67,190 @@ function onDecoDetached(tx, ty, id) {
   game.particles.spawn('dust', x, y, { count: 2 });
 }
 
-/** Hook: the player died. Step 2 implements the full death flow (bag loss...). */
-game.onPlayerDeath = () => {
-  game.deathT = 1.4;
-  game.save.stats.deaths++;
-  saveGame(game.save);
+// ------------------------------------------------------------------ meta hooks (step 2b)
+
+/** Write the save now (banking, purchase, death, victory, settings). */
+game.persist = () => saveGame(game.save);
+
+/** Recompute player stats: base -> Forge upgrades -> run relics (a bigger max HP also heals the gain). */
+game.refreshStats = () => {
+  const p = game.player;
+  const oldMax = p.stats.maxHp;
+  applyUpgrades(p, game.save, game.run ? game.run.relics : null);
+  if (!p.dead && p.stats.maxHp > oldMax) p.hp = Math.min(p.stats.maxHp, p.hp + p.stats.maxHp - oldMax);
 };
+
+game.setMuted = (m) => {
+  game.audio.setMuted(m);
+  game.save.settings.muted = !!m;
+  game.persist();
+  return game.audio.muted;
+};
+game.toggleMute = () => game.setMuted(!game.audio.muted);
+
+/** Forge purchase (the shop UI calls it). Returns meta.buyUpgrade's result. */
+game.buy = (key) => {
+  const r = buyUpgrade(game.save, key);
+  if (!r.ok) { game.audio.play('clink', { pitch: 0.8 }); return r; }
+  game.persist();
+  game.refreshStats();
+  game.audio.play('buy');
+  const f = game.gen.camp.forge, gy = game.gen.camp.surfaceY * TILE;
+  game.particles.spawn('spark', f.npcX + 10, gy - 10, { count: 14 });
+  game.particles.spawn('ember', f.npcX + 10, gy - 12, { count: 8, spread: 8 });
+  return r;
+};
+
+/** Banking: back in the camp zone, the backpack + run gold become banked gold. */
+game.bank = () => {
+  const run = game.run, p = game.player;
+  const s = bankLoot(game.save, run, p.stats);
+  game.persist();
+  game.hud.tally(s); // counts up with coin ticks, then the "cha-ching" (audio 'bank')
+  game.audio.play('coin', { pitch: 1.2 });
+  game.particles.spawn('glint', p.cx, p.y - 4, { color: '#ffe08a' });
+  game.particles.spawn('spark', p.cx, p.y, { count: 10 });
+  return s;
+};
+
+/** Stats that accumulate when a run ends (death, abandon, victory). */
+function closeRun() {
+  const run = game.run, st = game.save.stats;
+  run.over = true;
+  game.runActive = false;
+  st.kills += run.kills || 0;
+  st.playTime += Math.round(run.time || 0);
+  st.bestDepth = Math.max(st.bestDepth, run.bestDepth || 0);
+}
+
+/** Hook: the player died. Loot lost (minus insurance), stats saved, summary after the death animation. */
+game.onPlayerDeath = (cause) => {
+  const run = game.run, p = game.player;
+  if (!run || run.over) return;
+  game.deathInfo = settleDeath(game.save, run, p.stats, { depth: p.depth, cause });
+  closeRun();
+  game.persist();
+  game.victoryT = -1; // dying in the Guardian's last breath: the death wins
+  game.deathT = ECONOMY.deathDelay;
+};
+
+/** Pause menu "Recommencer l'expédition": abandon = a death (loot lost, insurance applies). */
+game.abandonRun = () => {
+  const run = game.run, p = game.player;
+  if (!run || run.over) return;
+  game.deathInfo = settleDeath(game.save, run, p.stats, { depth: p.depth, cause: 'abandon' });
+  closeRun();
+  game.persist();
+  game.setState('DEAD');
+};
+
+/** Hook: the Guardian's death sequence has finished (enemies.js). Victory screen after a short beat. */
+game.onBossDefeated = () => {
+  if (game.run) game.run.bossDefeated = true;
+  game.hud.banner('VICTOIRE !', 'Le Gardien de l’Abysse est vaincu');
+  game.toast('LE CŒUR EST LIBÉRÉ', { color: '#ffe08a', sub: 'Son trésor est à toi', life: 3 });
+  game.victoryT = ECONOMY.victoryDelay;
+};
+
+/** Victory: the Guardian's treasure and the whole loot are banked, stats saved, victory screen. */
+game.finishVictory = () => {
+  const run = game.run, p = game.player, save = game.save;
+  game.victoryT = -1;
+  game.entities.collectAllCoins();
+  const s = p.dead ? { total: 0 } : bankLoot(save, run, p.stats);
+  save.stats.victories++;
+  closeRun();
+  game.victoryInfo = {
+    time: run.time || 0, kills: run.kills || 0, banked: run.banked || 0, finalBank: s.total,
+    deaths: save.stats.deaths, victories: save.stats.victories, ngPlus: run.ngPlus || 0,
+    bestDepth: save.stats.bestDepth, relics: run.relics.slice(), bankGold: save.gold,
+  };
+  game.persist();
+  game.setState('VICTORY');
+};
+
+/** Victory screen "Continuer (NG+)": raise the NG+ level and start a new, harder mine. */
+game.continueNgPlus = () => {
+  game.save.ngPlus = (game.run ? game.run.ngPlus || 0 : game.save.ngPlus) + 1;
+  game.persist();
+  game.newRun();
+};
+
+/** Back to the title screen. A finished run is replaced by a fresh mine. */
+game.toTitle = () => {
+  if (game.run && !game.run.over) {
+    game.save.stats.bestDepth = Math.max(game.save.stats.bestDepth, game.run.bestDepth || 0);
+    game.persist();
+  } else {
+    game.newWorld(randomSeed());
+  }
+  game.setState('TITLE');
+};
+
+/** Settings "Effacer la sauvegarde": fresh save (settings kept), fresh mine. */
+game.eraseSave = () => {
+  const settings = { ...game.save.settings };
+  game.save = clearSave();
+  game.save.settings = settings;
+  game.persist();
+  game.newWorld(randomSeed());
+};
+
+function showTitle() {
+  game.ui.showTitle({
+    runActive: game.runActive && game.run && !game.run.over,
+    runDepth: game.run ? game.player.depth : 0,
+    onPlay: () => game.startGame(),
+    onSettings: showSettings,
+  });
+}
+
+function showSettings() {
+  game.ui.showSettings({
+    storage: game.saveStatus === 'unavailable' ? false : storageAvailable(),
+    onToggleMute: () => game.toggleMute(),
+    onToggleShake: () => { game.save.settings.shake = !game.save.settings.shake; game.persist(); return game.save.settings.shake; },
+    onErase: () => game.eraseSave(),
+    onBack: showTitle,
+  });
+}
 
 game.setState = (s) => {
   const prev = game.state;
   game.state = s;
   game.input.setControlsVisible(s === 'PLAYING');
-  if (s !== 'PLAYING') game.input.setContextAction(null);
+  if (s !== 'PLAYING') { game.input.setContextAction(null); game.hud.setHint(null); }
   const ui = game.ui;
   switch (s) {
-    case 'TITLE': ui.showTitle({ onPlay: () => game.startGame() }); break;
+    case 'TITLE': showTitle(); break;
     case 'PLAYING': ui.hide(); break;
     case 'PAUSED':
       ui.showPause({
+        run: game.run, player: game.player,
         onResume: () => game.setState('PLAYING'),
-        onRestart: () => game.newRun(),
-        onToggleMute: () => game.audio.toggleMute(),
+        onAbandon: () => game.abandonRun(),
+        onTitle: () => game.toTitle(),
+        onToggleMute: () => game.toggleMute(),
       });
       break;
-    case 'SHOP': ui.showShop({ onClose: () => game.setState('PLAYING') }); break;
-    case 'DEAD': ui.showDeath({ depth: game.run ? game.run.bestDepth : 0 }, { onRestart: () => game.newRun() }); break;
-    case 'VICTORY': ui.showVictory({}, { onContinue: () => game.setState('PLAYING') }); break;
+    case 'SHOP':
+      ui.showShop({
+        onBuy: (key) => game.buy(key),
+        onClose: () => game.setState('PLAYING'),
+      });
+      break;
+    case 'DEAD':
+      ui.showDeath(game.deathInfo || { depth: 0 }, {
+        onRestart: () => game.newRun(),
+        onTitle: () => game.toTitle(),
+      });
+      break;
+    case 'VICTORY':
+      ui.showVictory(game.victoryInfo || {}, {
+        onContinue: () => game.continueNgPlus(),
+        onTitle: () => game.toTitle(),
+      });
+      break;
     default: break;
   }
   if (prev === 'PLAYING' && s !== 'PLAYING') game.input.resetAll();
@@ -101,10 +264,18 @@ game.newWorld = (seed) => {
   game.gen = gen;
   game.world = gen.world;
   game.renderer.invalidateAll();
+  // the run exists before the enemies so they can read run.ngPlus (depth scaling × 1.5)
+  game.run = {
+    seed: gen.seed, gold: 0, bag: {}, bagCount: 0, bagValue: 0, relics: [], bestDepth: 0, maxLayer: 0, kills: 0,
+    startTime: game.time, time: 0, banked: 0, ore: 0, chests: 0,
+    ngPlus: (game.save && game.save.ngPlus) || 0, bossDefeated: false, over: false,
+  };
+  game.runActive = false;
   game.enemies.reset(gen.spawns);
   game.entities.reset(gen);
   game.particles.clear();
-  applyUpgrades(game.player, game.save);
+  game.hud.reset();
+  applyUpgrades(game.player, game.save, game.run.relics);
   game.player.reset(gen.camp.spawnX, gen.camp.spawnY);
   game.player.facing = 1;
   game.camera.snap();
@@ -116,37 +287,45 @@ game.newWorld = (seed) => {
   L.addStatic(f.x - 18, gy - 8, 0.95, [255, 140, 50]);
   L.addStatic(f.x - 3, gy - 28, 0.55, [255, 200, 110]);
   for (const p of gen.camp.props) if (p.kind === 'lamp') L.addStatic(p.x, gy - 18, 0.7, [255, 190, 100]);
-  game.run = {
-    seed: gen.seed, gold: 0, bag: [], bagCount: 0, relics: [], bestDepth: 0, maxLayer: 0, kills: 0, startTime: game.time,
-  };
   game.deathT = -1;
+  game.victoryT = -1;
   game.hitStopTicks = 0;
   game.currentLayer = 0;
 };
 
-/** New run after death / abandon: regenerate the mine, full HP, back to camp. */
+/** New run after death / abandon / victory: regenerate the mine, full HP, back to camp. */
 game.newRun = (seed) => {
-  game.save.stats.runs++;
-  saveGame(game.save);
   game.newWorld(seed ?? randomSeed());
+  game.save.stats.runs++;
+  game.persist();
+  game.runActive = true;
   game.setState('PLAYING');
   game.audio.setLayer(0);
+  game.hud.banner(game.run.ngPlus ? `NG+ ${game.run.ngPlus}` : 'LE CAMP', 'Une nouvelle mine s’ouvre sous tes pieds');
 };
 
-/** From the title screen. */
+/** From the title screen: "Jouer" / "Continuer" (resumes an expedition under way). */
 game.startGame = (seed) => {
   game.audio.unlock();
   if (seed !== undefined && seed !== null) game.newWorld(seed);
+  const fresh = !game.runActive || game.run.over;
+  if (fresh && game.run.over) game.newWorld(randomSeed());
+  game.runActive = true;
   game.setState('PLAYING');
-  game.audio.setLayer(0);
-  game.hud.banner('LE CAMP', 'La mine s’ouvre sous tes pieds');
-  if (flags.depth) window.__gouffre.teleportDepth(flags.depth);
-  if (flags.gold && game.run) game.run.gold = flags.gold;
+  game.audio.setLayer(layerAtDepth(game.player.depth).index);
+  if (fresh) {
+    game.save.stats.runs++;
+    game.persist();
+    game.hud.banner(game.run.ngPlus ? `NG+ ${game.run.ngPlus}` : 'LE CAMP', 'La mine s’ouvre sous tes pieds');
+    if (flags.depth) window.__gouffre.teleportDepth(flags.depth);
+    if (flags.gold && game.run) game.run.gold = flags.gold;
+  }
 };
 
 // ------------------------------------------------------------------ fixed update
 
 let emberT = 0, glintT = 0, smokeT = 0;
+const FORGE_INTER = { label: 'Forge' };
 const visLava = [], visOre = [];
 
 function ambientEffects(dt) {
@@ -207,34 +386,36 @@ function updatePlaying(dt) {
 
   const p = g.player;
   const run = g.run;
+  if (!p.dead) run.time += dt;
   // layers: banner on first entry, ambience follows the current layer
   const layer = layerAtDepth(p.depth);
   if (p.depth > run.bestDepth) run.bestDepth = p.depth;
   if (layer.index > run.maxLayer) {
     run.maxLayer = layer.index;
-    g.hud.banner(layer.title, `Couche ${layer.index + 1} · −${layer.d0} m`);
+    if (!g.enemies.gatesSealed) g.hud.banner(layer.title, `Couche ${layer.index + 1} · −${layer.d0} m`); // the boss banner wins
   }
   if (layer.index !== g.currentLayer) { g.currentLayer = layer.index; g.audio.setLayer(layer.index); }
 
   // Forge: contextual interact near the blacksmith
   const f = g.gen.camp.forge;
   const nearForge = !p.dead && p.feetY <= g.gen.camp.surfaceY * TILE + 1 && Math.abs(p.cx - f.npcX) < f.interactRadius;
-  const inter = nearForge ? { label: 'Forge' } : g.entities.interactionAt(p);
+  const inter = nearForge ? FORGE_INTER : g.entities.interactionAt(p);
   g.input.setContextAction(inter ? inter.label : null);
   g.hud.setHint(inter ? `E : ${inter.label.toUpperCase()}` : null);
   if (inter && g.input.pressed('interact')) {
     if (nearForge) { g.setState('SHOP'); return; }
     if (inter.use) inter.use();
   }
-  // TODO step 2: banking when the player is back in the camp zone (p.feetY <= camp.bankY)
+  // banking: back in the camp zone (feet at or above the surface) with loot
+  if (!p.dead && !run.over && p.feetY <= g.gen.camp.bankY && (run.bagCount > 0 || run.gold > 0)) g.bank();
 
+  if (g.victoryT > 0) {
+    g.victoryT -= dt;
+    if (g.victoryT <= 0) { g.finishVictory(); return; }
+  }
   if (g.deathT > 0) {
     g.deathT -= dt;
-    if (g.deathT <= 0) {
-      g.save.stats.bestDepth = Math.max(g.save.stats.bestDepth, run.bestDepth);
-      saveGame(g.save);
-      g.setState('DEAD');
-    }
+    if (g.deathT <= 0) g.setState('DEAD');
   }
 }
 
@@ -265,13 +446,12 @@ function frame(now) {
     } else {
       acc = 0;
       game.time += dt;
-      // keyboard / gamepad navigation of the overlays
+      // overlays: the keyboard is handled by ui.js (focus navigation); gamepad / injected
+      // presses confirm the focused button or go back
       const inp = game.input;
       inp.beginTick();
-      const confirm = inp.pressed('jump') || inp.pressed('interact');
-      if (game.state === 'TITLE' && confirm) game.startGame();
-      else if ((game.state === 'PAUSED' || game.state === 'SHOP') && (inp.pressed('pause') || (confirm && game.state === 'SHOP'))) game.setState('PLAYING');
-      else if (game.state === 'DEAD' && confirm) game.newRun();
+      if (inp.pressed('pause')) game.ui.back();
+      else if (inp.pressed('jump') || inp.pressed('interact')) game.ui.activate();
       inp.endTick();
       if (game.state === 'TITLE') { ambientEffects(dt); game.particles.update(dt); game.player._updateAnim(dt); }
     }
@@ -321,7 +501,6 @@ function boot() {
   const canvas = document.getElementById('game');
   game.input = createInput();
   game.audio = createAudio();
-  if (flags.mute) game.audio.setMuted(true);
   game.audio.debug = flags.debug;
   game.particles = new Particles(game);
   game.camera = new Camera(game);
@@ -331,7 +510,14 @@ function boot() {
   game.enemies = new EnemyManager(game);
   game.entities = new EntityManager(game);
   game.renderer = new Renderer(game, canvas);
-  game.save = loadSave();
+  const loaded = loadSaveEx();
+  game.save = loaded.save;
+  game.saveStatus = loaded.status;
+  if (flags.bank !== null && flags.bank !== undefined) game.save.gold = flags.bank;
+  game.audio.setMuted(!!flags.mute || game.save.settings.muted);
+  // "Secousses de l'écran" setting
+  const rawShake = game.camera.shake.bind(game.camera);
+  game.camera.shake = (px, s) => { if (game.save.settings.shake !== false) rawShake(px, s); };
   game.ui = createUI(game, document.getElementById('ui'));
   game.input.attach({
     layer: document.getElementById('touch'),
@@ -340,7 +526,7 @@ function boot() {
   });
   game.input.onAnyInput = () => game.audio.unlock();
   game.input.onKey = (e) => {
-    if (e.code === 'KeyM' && !e.repeat) { const m = game.audio.toggleMute(); game.toast(m ? 'SON COUPÉ' : 'SON ACTIVÉ'); }
+    if (e.code === 'KeyM' && !e.repeat) { const m = game.toggleMute(); game.toast(m ? 'SON COUPÉ' : 'SON ACTIVÉ'); game.ui.refresh(); }
     if (game.input.onKeyDebug) game.input.onKeyDebug(e);
   };
 
@@ -351,6 +537,7 @@ function boot() {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       if (game.state === 'PLAYING') game.setState('PAUSED');
+      game.persist();
       game.audio.suspend();
     } else {
       game.audio.resume();
@@ -366,6 +553,7 @@ function boot() {
   installDebug(game);
   game.newWorld(flags.seed ?? randomSeed());
   game.setState('TITLE');
+  if (game.saveStatus === 'corrupt') game.ui.notice('Sauvegarde illisible : une nouvelle a été créée.');
   if (flags.autostart) game.startGame();
   requestAnimationFrame(frame);
   document.documentElement.classList.add('ready');

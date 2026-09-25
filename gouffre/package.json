@@ -7,7 +7,8 @@
   "scripts": {
     "test": "node --test tests/unit/*.test.mjs",
     "test:e2e": "node tests/e2e/smoke.mjs",
-    "serve": "node tests/e2e/server.mjs 8080"
+    "serve": "node tests/e2e/server.mjs 8080",
+    "economy": "node tools/economy.mjs"
   },
   "engines": {
     "node": ">=20"
