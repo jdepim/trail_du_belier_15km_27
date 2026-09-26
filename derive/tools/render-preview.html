@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>Dérive — aperçu du rendu</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #game { position: fixed; left: 0; top: 0; display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+</style></head>
+<body><canvas id="game"></canvas>
+<script type="module">
+// Presentation preview without the shell: real worldgen + simulation (player, hazards, entities) ticking
+// with a scripted input, the Renderer, Particles and Hud. Query parameters:
+//   at=<place>   albatros colibri belt orion orion_in selene gallery twins helios maelstrom ulysse satellite mistral
+//   dx=, dy=     offset (px) from that place          seed=<n>     world seed (default 12345)
+//   t=<s>        simulated seconds before the capture (default 3)     face=<deg>  facing (0 = east, 90 = south)
+//   move=<deg>   hold the thrust stick in that direction (the astronaut is free, not pinned)
+//   brake        hold the brake       items=all|keycard,explosives…   dpr=<n> (default 1)
+//   map          state MAP (reveal=all to lift the whole fog; otherwise a scripted exploration)
+//   hud=demo     banner, toast, tip and warnings      state=<STATE>   (e.g. TITLE, VICTORY, DEAD)
+//   vt=<s>       with state=VICTORY: cinematic clock  explode        a charge explodes next to the astronaut
+import { FIXED_DT, POI_BY_KEY, CENTER, BELT, TILE } from '../src/config.js';
+import { generateWorld } from '../src/worldgen.js';
+import { Player } from '../src/player.js';
+import { Hazards } from '../src/hazards.js';
+import { Entities } from '../src/entities.js';
+import * as meta from '../src/meta.js';
+import { TILE_ID } from '../src/tiles.js';
+import { loadSprites } from '../src/sprites.js';
+import { Camera, Renderer } from '../src/render.js';
+import { Particles } from '../src/particles.js';
+import { Hud } from '../src/hud.js';
+
+const q = new URLSearchParams(location.search);
+const num = (k, d) => (q.has(k) ? Number(q.get(k)) : d);
+loadSprites();
+const save = meta.defaultSave(num('seed', 12345));
+const items = q.get('items');
+if (items) for (const k of meta.ITEM_KEYS) save.items[k] = items === 'all' || items.split(',').includes(k);
+const input = {
+  moveX: 0, moveY: 0, _held: new Set(), _pressed: new Set(),
+  held(a) { return this._held.has(a); }, pressed(a) { return this._pressed.has(a); },
+  touchEnabled: q.has('touch'),
+};
+if (q.has('move')) { const a = num('move', 0) * Math.PI / 180; input.moveX = Math.cos(a); input.moveY = Math.sin(a); }
+if (q.has('brake')) input._held.add('brake');
+const game = { flags: { god: true, debug: q.has('debug') }, state: 'PLAYING', time: 0, save, input, safe: { l: 0, r: 0, t: 0, b: 0 } };
+game.gen = generateWorld(save.seed);
+game.world = game.gen.world;
+game.fog = meta.createFog();
+const canvas = document.getElementById('game');
+game.camera = new Camera(game);
+game.particles = new Particles(game);
+game.hud = new Hud(game);
+game.renderer = new Renderer(game, canvas);
+game.player = new Player(game);
+game.hazards = new Hazards(game);
+game.entities = new Entities(game);
+game.toast = (t, o) => game.hud.toast(t, o);
+game.reveal = (x, y, r) => meta.fogReveal(game.fog, x, y, r);
+game.persist = () => {};
+game.tileBroken = (tx, ty, id) => game.particles.spawn('tile', (tx + 0.5) * TILE, (ty + 0.5) * TILE, { material: null, count: 4 });
+game.run = meta.createRun(save);
+meta.applyUpgrades(game.player, save);
+game.hazards.reset(game.gen, game.run.lifeSeed);
+game.entities.reset(game.gen, game.run.lifeSeed);
+
+// --- where to look
+const gen = game.gen;
+const item = (k) => gen.items.find((i) => i.key === k);
+function beltSpot() {
+  // the static cluster nearest to the belt's north point
+  let best = null;
+  for (let a = -Math.PI / 2; a < Math.PI * 1.5; a += 0.01) {
+    for (let r = BELT.rInner; r < BELT.rOuter; r += 16) {
+      const x = CENTER + Math.cos(a) * r, y = CENTER + Math.sin(a) * r;
+      if (game.world.get(Math.floor(x / TILE), Math.floor(y / TILE)) === TILE_ID.ASTEROID) { best = { x: x + 70, y: y + 30 }; break; }
+    }
+    if (best) break;
+  }
+  return best || { x: CENTER, y: CENTER - 2100 };
+}
+const P = (k, dx = 0, dy = 0) => ({ x: POI_BY_KEY[k].x + dx, y: POI_BY_KEY[k].y + dy });
+const door0 = gen.doors.find((d) => d.id === 'orion:door0');
+const places = {
+  albatros: () => gen.spawn,
+  colibri: () => P('colibri', 40, 0),
+  belt: beltSpot,
+  orion: () => ({ x: door0.x, y: door0.y - 70 }),
+  orion_in: () => P('orion', -40, 0),
+  selene: () => ({ x: gen.pois.find((p) => p.key === 'tycho').x + 70, y: POI_BY_KEY.tycho.y }),
+  gallery: () => { const i = item('heatshield'); return { x: i.x + 30, y: i.y }; },
+  twins: () => P('helios', 0, -300),
+  helios: () => { const i = item('anchor'); return { x: i.x, y: i.y + 20 }; },
+  maelstrom: () => P('maelstrom', 60, 230),
+  ulysse: () => ({ x: gen.capsule.x, y: gen.capsule.y + 40 }),
+  satellite: () => P('sat1', 40, 20),
+  mistral: () => P('mistral', 20, 0),
+};
+const at = q.get('at') || 'albatros';
+const spot = (places[at] || places.albatros)();
+const px = spot.x + num('dx', 0), py = spot.y + num('dy', 0);
+game.player.reset(px, py);
+if (q.has('face')) { game.player.angle = num('face', 0) * Math.PI / 180; game.player.dir16 = ((Math.round(game.player.angle / (Math.PI / 8)) % 16) + 16) % 16; }
+game.camera.snap();
+
+function resize() {
+  game.renderer.resize(innerWidth, innerHeight, num('dpr', 1));
+  game.camera.snap();
+}
+resize();
+addEventListener('resize', resize);
+
+// --- simulate
+const pinned = !q.has('move');
+const face = game.player.angle;
+function tick() {
+  const p = game.player;
+  p.update(FIXED_DT);
+  game.hazards.update(FIXED_DT);
+  game.entities.update(FIXED_DT);
+  if (pinned) { p.x = px; p.y = py; p.prevX = px; p.prevY = py; p.vx = 0; p.vy = 0; p.angle = face; }
+  game.particles.update(FIXED_DT);
+  game.camera.update(FIXED_DT);
+  game.hud.update(FIXED_DT);
+  meta.fogReveal(game.fog, p.x, p.y, 260);
+  game.time += FIXED_DT;
+}
+const T = num('t', 3);
+if (q.has('hud')) {
+  game.hud.banner("Carte d'accès", "La carte d'accès ouvre les portes de la station Orion.", { icon: 'item_keycard' });
+  game.hud.toast('Oxygène et carburant au maximum.', { color: '#8fe3ff', life: 30 });
+  game.hud.tip('Maintiens le frein pour t\'arrêter.', 'Ton élan ne s\'arrête jamais tout seul.', { life: 30 });
+  game.player.o2 = 20;
+  game.run.salvage = 14; save.salvage = 120;
+}
+for (let i = 0; i < T * 60; i++) {
+  tick();
+  if (q.has('explode') && i === Math.floor(T * 60) - 12) game.hazards.explode(px + 30, py, 40, 45, 'self');
+}
+if (q.has('hud')) { game.hud.bannerT = 3; }
+if (q.has('map')) {
+  if (q.get('reveal') === 'all') meta.fogReveal(game.fog, CENTER, CENTER, 8000);
+  else {
+    const path = [['albatros', 'colibri'], ['albatros', 'orion'], ['albatros', 'selene'], ['albatros', 'sat1'], ['sat4', 'twins']];
+    for (const [a, b] of path) for (let k = 0; k <= 1; k += 0.01) meta.fogReveal(game.fog, POI_BY_KEY[a].x + (POI_BY_KEY[b].x - POI_BY_KEY[a].x) * k, POI_BY_KEY[a].y + (POI_BY_KEY[b].y - POI_BY_KEY[a].y) * k, 300);
+    meta.fogReveal(game.fog, POI_BY_KEY.sat1.x, POI_BY_KEY.sat1.y, 1600);
+    save.world.satellites.push('sat1');
+    game.entities.satellites[0].active = true;
+  }
+  game.state = 'MAP';
+}
+if (q.has('state')) game.state = q.get('state');
+if (game.state === 'VICTORY') game.renderer.victoryT = num('vt', 0);
+if (q.has('dead')) { game.flags.god = false; game.player.die('heat'); for (let i = 0; i < 40; i++) tick(); }
+
+let first = true;
+function frame() {
+  if (!q.has('freeze')) { tick(); }
+  game.renderer.render(1);
+  if (first) { first = false; document.title = 'ready'; }
+  requestAnimationFrame(frame);
+}
+window.__preview = game;
+requestAnimationFrame(frame);
+</script></body></html>

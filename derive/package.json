@@ -1,0 +1,16 @@
+{
+  "name": "derive",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dérive — exploration spatiale rogue-lite en pixel art, vue de dessus (HTML5 canvas, ES modules, aucune dépendance).",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/unit/*.test.mjs",
+    "test:e2e": "node tests/e2e/smoke.mjs",
+    "serve": "node tests/e2e/server.mjs 8080",
+    "solver": "node tools/solver.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
