@@ -138,7 +138,9 @@ O2 alarm while `player.o2Low`, storm ∝ `hazards.stormIntensity`. `deposit`, `b
 | `fuelEmpty` | HUD « CARBURANT VIDE »; `o2Low` HUD « O2 BAS » (< 25 %) |
 
 Controls: thrust = `thrustAccel × |stick|` toward the stick; thrust can never raise the speed above
-`max(cruiseSpeed, current speed)` (it can still brake or steer above cruise). Brake = 260 px/s² against the
+`max(cruiseSpeed, current speed)` (it can still brake or steer above cruise). Fuel pays only for the velocity change
+actually applied: holding the stick along the motion at cruise shows a pilot flame (`thrust = PLAYER.cruiseFlame`
+0.25) and burns nothing, so the solar recharge keeps running (integration change, see Integration). Brake = 260 px/s² against the
 velocity until the stop (12 u/s). Boost = +170 px/s toward the stick (or the facing if neutral), 22 u,
 cooldown 1.2 s. Inertia assist (on by default): ×e^(−0.35 dt) without stick nor brake. Hard cap 420 px/s.
 Tile bounces: restitution 0.35, 12 % of tangential speed lost; normal speed above 95 px/s hurts
@@ -178,7 +180,8 @@ from 900 px to the horizon), `stormIntensity` 0..1 (ramps over BOUNDARY.r ± 300
 | `explosions[]` (8) | `active x y r power t life` (FX: flash + shock ring, `t / life` progress) |
 
 Rules: heat per sun `heatMax × ((heatR − d) / (heatR − coreR))^2` (840 at the core surface, 0 at 650 px), the two
-suns add up, × 0.05 inside insulated zones (`ZONES[].sheltered`), × 0.1 with the shield. Core contact = death.
+suns add up, × 0.01 inside insulated zones (`ZONES[].sheltered`), × 0.06 with the shield (both retuned at
+integration, see Integration). Core contact = death.
 Flares every 12–20 s per sun (first after 4–12 s): 1.5 s warn, then a ring hits once for 25 (× 0.2 shield) unless
 a solid tile lies on the segment sun → player. Black holes: horizon (+ half the player radius) = death.
 Moving asteroids: kept around the player (window 1000 px, spawned ≥ 520 px away, recycled beyond 1250 px);
@@ -263,11 +266,11 @@ of the sector disc, poiDiscovered(fog, poi)` (160 × 160 cells of 64 px).
   at **336 px** (DESIGN said ~380) because a pure inverse square cannot give "= base thrust at 600 px" and
   "> max thrust + brake (272 + 260) at the module" at 380 px: at 336 px it is 558 px/s², and 139 px/s² with the
   Ancre (< 170). Suns 60 px/s² at 300 px; moon 25 px/s² at the surface (orbit speed ≈ 105 px/s).
-- **Heat / thermal lock** (DESIGN §6.4): exponent 2, `heatMax` 840, observatory insulation × 0.05. The solver
-  measures the damage-minimising route to the anchor at 420 px/s: **333 hull without the shield** (≥ 300 =
-  1.5 × the 200 max hull) and **32 with it** (≤ 40). The ratio is fixed by the shield (× 0.1), so a shielded
-  player flying at ~200 px/s takes ~65 on the way in: the observatory holds two repair kits, the suns' pull
-  speeds the approach up, and dying on the way back keeps the anchor. Heat reaches 10 hull/s only ~65 px inside
+- **Heat / thermal lock** (DESIGN §6.4): exponent 2, `heatMax` 840, observatory insulation × 0.01 (was 0.05),
+  shield × 0.06 (was 0.1). The solver measures the damage-minimising route to the anchor at 420 px/s: **331 hull
+  without the shield** (≥ 300 = 1.5 × the 200 max hull) and **19 with it** (≤ 40). With the original × 0.1 a
+  shielded player at cruise lost ~65 hull on the way in and ~3 hull/s inside; `node tools/feel.mjs` now reports
+  11–43 hull for a braking approach depending on the brake point. Heat reaches 10 hull/s only ~65 px inside
   the heat radius, so « SURCHAUFFE » warns early.
 - **Economy**: one-time salvage ≈ 545 (33 crates ≈ 370 incl. ~160 in the Mistral, 5 caches ≈ 40, satellites
   6 × 15, logs 9 × 5) + debris ≈ 84 pieces × 2 per life + rock fragments; every upgrade costs 1565 in total.
@@ -312,7 +315,8 @@ the observatory's north / south approach lanes).
 
 ### Amendments to DESIGN.md (simulation)
 
-- Capsule hatch 336 px from the Maelström (not ~380), see tuning rationale.
+- Capsule hatch 336 px from the Maelström (not ~380), see tuning rationale. (All amendments are collected in
+  DESIGN.md §15.)
 - The dock (deposit + refill + charges) is run by `entities.update`, not by main.
 - Key items are taken by touch; consumables only when useful (≥ 25 % of their value missing).
 - Turrets come back every life (not saved). `save.world.taken` holds the one-time cache ids.
@@ -323,6 +327,146 @@ the observatory's north / south approach lanes).
 
 ## Presentation
 
+Files: `src/sprites.js, render.js, render-config.js, particles.js, hud.js, mapview.js, audio.js`, `tools/sprites.html,
+render-preview.html, shot.mjs, mapdump.mjs, icon.html, make-icons.mjs`, `icons/*.png`,
+`tests/unit/presentation.test.mjs`. No module touches the DOM at import time (Node imports them in the tests);
+everything is drawn in code and rasterised once by `loadSprites()` (~0.4 s in headless Chromium). Presentation
+tuning lives in `src/render-config.js` (`config.js` stays the simulation's): light direction, backdrop, nebula
+regions, darkness, FX strengths, particle pool, HUD layout, radar, map, audio mix.
+
+### Rendering (`render.js`)
+
+- `Renderer.resize(cssW, cssH, dpr)`: `scale = max(1, floor(deviceH / VIEW.targetHeight))`, internal
+  `floor(device / scale)` (iPhone 13 landscape 750 × 342 CSS @3 → 562 × 256; 844 × 390 @3 → 633 × 292); the canvas is
+  CSS-upscaled and centred (Gouffre method). Sets `game.view = { w, h, scale, cssToInternal, camX, camY }`
+  (`camX / camY` = top-left of the last drawn frame, read by the HUD radar).
+- `render(alpha)`: `TITLE` (or no world yet) → drifting starfield; `MAP` → `drawMap`; every other state → the world
+  (frozen behind the DOM overlays when not ticking), with the HUD except in `VICTORY` (ui.js's opaque cinematic
+  canvas covers it). It also **drives the audio**: loops from state (`thrust` = max(throttle, boost), `brake`,
+  `heat` = `heatLevel`, `rumble` = `bhProximity`, `alarm` = `o2Low`, `storm` = `stormIntensity`, all 0 outside a
+  live `PLAYING`) and the ambience zone (`title`, `victory`, `interior` in a dark zone, `selene` in Tycho or near the
+  moon, `storm`, `maelstrom`, `twins`, `space`) + `audio.tick()` for its distant notes.
+- Layer order: backdrop (3 star layers with incommensurate tiles 512 / 640 / 896, twinklers, regional nebulae
+  cross-faded by distance to Séléné / the twins / the Maelström / the storm ring, neutral elsewhere) → tile chunks →
+  panel LEDs + dock brackets → celestial bodies (below everything that moves, so the astronaut and asteroids stay
+  visible over a corona or an accretion disk) → props, pickups, key items bobbing over their pads, turrets, charges,
+  asteroids, gas jets → astronaut → lit particles → **interior darkness** → emissive layer (item glows and light
+  shafts, satellite beacons, pickup glints, lasers, vent warnings, turret laser sights, bolts, charge LEDs + blast
+  radius ring, MMU flames) → emissive particles → screen overlays (black-hole vignette, heat tint + orange edge glow,
+  ion-storm static and glitch bands) → interaction brackets (+ `E : Ouvrir` / `Y : …` label without touch; the DOM
+  pill names it on touch) → HUD.
+- **Tile cache**: 32 × 32-tile chunks (256 px canvases, LRU of 48), built with the baked light direction (nearest sun
+  within 1500 px, else `LIGHT_DIR`); `world.dirtyLog` patched cell by cell (3 × 3 around each change, same protocol
+  as Gouffre, log overflow → full rebuild through `chunkVersion`); at most one prefetch build per frame, only in
+  frames that built nothing. Every cell draws inside its own 8 × 8 square. Solid tiles get autotiled edges (outline,
+  lit lip or shade by the light, rounded outer corners); floors get contact shadows; hazard stripes along doors;
+  doors are drawn from 3-part sprites (red locked, green open) by orientation.
+- **Darkness** (zones with `ZONES[].dark`): a tile-resolution light grid around the view — headlamp flood (path
+  distance, cone `DARK.lampHalfAngle` ± soft edge + halo), tile lights (`TILES[].light / lightColor`) flooded with
+  falloff, dynamic lights (lasers, bolts, charges, explosions, aiming turrets, warning vents, key items, MMU flame) →
+  one `ImageData` darkness layer + one additive colour layer, smoothed ×8. Hull tiles facing space stay unlit; the
+  per-zone base darkness is `DARK.zoneBase` (Tycho 0.62, others 0.82).
+- Celestial: suns = 8 animated pixel frames (granulation noise circling, limb darkening) + additive dithered corona,
+  white pulse during `'warn'`, the flare ring (glow + core) while `'ring'`, a faint dashed ring at `heatR`; black
+  holes = 16 accretion-disk frames (black horizon, photon ring, differential rotation, orange → violet), bright motes
+  in the disk area and faint dust spiralling in from 900 px (both stateless functions of time, R2 sequence).
+- `Camera`: look-ahead `CAMERA.lookAheadVel × v` capped at `CAMERA.lookAhead`, exponential smoothing, shake (a weaker
+  shake never overrides a stronger one), `renderPos(alpha, out, anchorX, anchorY)` pixel-snaps relative to the
+  interpolated player so the astronaut never shimmers.
+- Stats for tests / debug: `renderer.chunkBuilds`, `cellPatches`.
+
+### Sprites (`sprites.js`)
+
+API: `loadSprites()`, `getSprite(name) → { canvas, w, h, frames, ax, ay }`, `hasSprite`, `spriteNames`,
+`drawSprite(ctx, name, frame, x, y, { flipX })` (anchor = centre unless set), `makeIcon(name, cssPx)` (PNG data URL,
+integer-upscaled for the device pixel ratio, cached; `null` before `loadSprites` / without a DOM),
+`getTileTexture(id, variant)`, `tileVariant(id, tx, ty)`, `tileVariantCount`, `getGlow(color, r)` (`GLOW_COLORS` ×
+`GLOW_RADII`), `backdrop { layers, twinklers, starCols, nebula{neutral blue orange violet green}, staticNoise,
+vignette, heatVignette }`, `celestial { sun{key: frames}, corona, disk{key: frames}, earth }` (ui.js uses
+`celestial.earth` and `capsule_ship`).
+Names: `astro` / `astro_hurt` / `astro_dim` (16 directions from a lit analytic model: white suit, orange visor, MMU
+pack and hand controllers), `ast_<size 0..2>_<variant 0..3>` (16 rotation frames), `pk_salvage` (4) `pk_cache`
+`pk_o2` `pk_fuel` `pk_repair`, `item_<key>` (+ alias `<key>`), `up_<key>` (+ alias `upg_<key>`), touch icons `brake
+boost charge action map pause`, HUD minis `hud_hull hud_o2 hud_fuel hud_salvage hud_charge hud_charge_off` (+ aliases
+`hull o2 fuel salvage`), `poi_*` (home shuttle station moon gallery sun observatory blackhole capsule wreck
+satellite), `radar_arrow` (16), `crate` (closed / open), `terminal` (unread ×2, read), `refill`, `locker`,
+`workbench`, `hatch` (locked / ready), `turret_base`, `turret_gun` (32), `turret_dead`, `charge_bomb` (LED off / on),
+`bolt`, `door_h door_v door_open_h door_open_v` (3 parts), `capsule_ship`.
+Tiles: textures cut from 8 / 16 / 32 / 64 px seamless blocks so surfaces read continuous (riveted hull plates with
+vent / panel / weld variants, scorched wreck, white shuttle, tread plating, grates, faceted ice, boulder rubble,
+cracked small-rock fringe). The moon uses its own calm 5-tone regolith palettes (64 px blocks sharing one base field,
+per-variant craterlets kept inside the block); the gallery floor is darker than the rock.
+
+### Particles (`particles.js`)
+
+`new Particles(game?)` (struct of arrays, `PARTICLES.max` = 1400 slots, ring reuse when full; with `game`, debris
+chunks bounce off solid tiles), `spawn(kind, x, y, opts)` (opts read synchronously), `update(dt)`,
+`draw(ctx, camX, camY, pass)` (`'lit'` under the darkness, `'emissive'` additive over it, `'all'`), `clear()`,
+`alive`. Kinds: every simulation kind (`exhaust brake boost spark death pickup item door crate satellite gas gas_warn
+shelter muzzle debris rock explosion`; `spark.material` picks metal sparks / rock chips / ice or glass shards) plus
+`tile` (broken-tile chunks, `material` = tile key), `smoke embers dust shards glint flash ring`. Styles: dot, streak,
+smoke (grows), ring, flash (glow sprite), glint (cross), shard, chunk.
+
+### HUD (`hud.js`)
+
+`drawText(ctx, str, x, y, color, { align, outline, shadow, alpha, scale })` → width; `measureText(str)`. 5 × 7 bitmap
+font from Gouffre (capitals, digits, French accents incl. Œ Ç, punctuation, arrows, ⌂); outlined / shadowed labels
+cached as canvases per (style, colour, string). Pure helpers: `TextMemo`, `distLabel(px)` (precomputed `'125 m'`
+strings, 1 m = 8 px, 5 m steps), `edgePoint(cx, cy, dx, dy, lim, out)`.
+`Hud`: `update(dt)` (timers, toast queue, discovery cache every 0.4 s via `poiDiscovered`, zone names on entering an
+interior zone, a `warning` chirp when a warning starts), `draw(ctx)`, `toast(text, { color, life, icon })` (3 on
+screen, 8 queued, duplicates refreshed), `banner(title, sub, { icon })`, `tip(line1, line2, { key, life })` (one at a
+time, waits for banners), `cancelTip(key)`, `tipActive`, `zoneName(name)`, `reset()`.
+Layout: top-left hull / O2 / fuel bars with icons (width grows with upgrades, lagging hull trail, low values blink),
+charges beside them once the Explosives are owned, `FERRAILLE 120 (+14)` (banked counts up after a deposit);
+top-centre column: zone name / banner, blinking warnings (`O2 BAS`, `SURCHAUFFE`, `GRAVITÉ CRITIQUE`, `CARBURANT
+VIDE`, `TEMPÊTE IONIQUE`), onboarding tip panel, toasts; red edge on hits and under 25 % hull. Radar arrows on the
+screen border toward discovered or in-range POIs (`radar: true`, activated satellites dropped, the Albatros always),
+with icon and distance, only the `RADAR.maxArrows` (6) nearest; they keep out of the top-centre column while it holds
+text (its width follows the banner / zone name / warnings, `HUD_LAYOUT.topGapHalf` minimum) and, on touch screens,
+out of the DOM controls (`HUD_LAYOUT.*Css`, CSS px × `view.cssToInternal`); an overlapping arrow slides along its
+edge to the nearest free slot (`RADAR.slotW / slotH`) inside the edge limits, or is dropped.
+
+### Map (`mapview.js`)
+
+`drawMap(ctx, game, w, h)`, `invalidateMap()`, pure `mapLayout(w, h, safe)` / `worldToMap(layout, x, y)`. Square map
+of the sector (terrain canvas 320² rebuilt when `world.version` changes) under the fog bitset (canvas 160², rebuilt
+when the revealed-cell count changes; explored = lit navy, unexplored = near black), 1000 px grid, storm boundary,
+belt ring once any belt cell is known, suns (heat disc) and black holes once discovered, discovered POIs with icons
+and names (satellites: green dot once activated), the astronaut (pulsing ring + heading), legend (explored %,
+satellites, logs, equipment owned / `???`, key).
+
+### Audio (`audio.js`)
+
+`createAudio()` → `{ play(name, { volume, pitch, material }), setLoop(name, level), setZone(key), setMuted, toggleMute,
+muted, unlock, suspend, resume, tick }` + exports `SOUND_NAMES`, `LOOP_NAMES`, `ZONE_KEYS`. Copied from Gouffre's
+audited unlock (context created in the first gesture, silent buffer, `_wake()` also resumes WebKit's `interrupted`
+state, promise rejections swallowed). Every simulation sound has a recipe (`impact` / `bump` by material); shell
+sounds `deposit buy ui ui_back map pause respawn victory tip warning log`. Loops: thrust (low-passed noise, brightness
+∝ throttle), brake (high hiss), heat (crackle), rumble (sub sines + wobbling dark noise, ∝ level²), alarm (gated
+880 Hz), storm (fluttering band-passed static). Ambience: detuned drone per zone (root, chord, filter, noise) + sparse
+pentatonic notes. Repeats of one sound + material within 30 ms are dropped. The mute state is main's (save).
+
+### Tools
+
+- `tools/render-preview.html`: real worldgen + player / hazards / entities ticking with a scripted input, the
+  Renderer, Particles and Hud, no shell. `?at=albatros|colibri|belt|orion|orion_in|selene|gallery|twins|helios|
+  maelstrom|ulysse|satellite|mistral`, `dx dy seed t face move brake items touch hud explode dead state map
+  reveal=all freeze dpr`.
+- `node tools/shot.mjs "<page?query>" out.png [cssW cssH waitMs dpr clip]` (global Playwright; also exports
+  `startStatic`, `launchBrowser`). Reference: `844 390 … 3` = 633 × 292 internal, `750 342 … 3` = iPhone 13.
+- `tools/sprites.html?z=4&only=<prefix>`: every sprite frame, tile texture, glow, backdrop and celestial asset.
+- `node tools/mapdump.mjs [seed] [out.png] [poiKey radiusPx]`: sector / POI crop PNG without a browser, records marked.
+- `node tools/make-icons.mjs` (renders `tools/icon.html`): `icons/icon-180.png`, `icon-192.png`, `icon-512.png`,
+  `icon-maskable-512.png` (astronaut fleeing the Maelström).
+
+### Amendments (presentation)
+
+- The renderer has no victory cinematic of its own: ui.js owns it (opaque canvas), the frozen world is drawn under.
+- `Particles.draw` takes a 4th `pass` argument; `new Particles(game)` enables chunk bounces (main passes `game`).
+- Reserved HUD areas are in CSS px (`HUD_LAYOUT.topRightCss / bottomRightCss / bottomLeftCss`), mirroring
+  `input.js layout()`; change both together.
+
 ## Shell
 
 Files: `index.html`, `manifest.webmanifest`, `sw.js`, `src/main.js`, `src/input.js`, `src/ui.js`, `src/tips.js`,
@@ -331,7 +475,7 @@ WebKit): CSS-upscaled canvas, safe-area probe, overlay scrolling, pointerup menu
 
 ### Boot and lives (`main.js`)
 
-Boot: `loadSprites()` → systems (`Input`, `createAudio`, `Particles`, `Camera`, `Hud`, `Player`, `Hazards`,
+Boot: `loadSprites()` → systems (`Input`, `createAudio`, `Particles(game)`, `Camera`, `Hud`, `Player`, `Hazards`,
 `Entities`, `Renderer`, `Coach`) → `loadSaveEx()` (+ `?seed` / `?bank` / `?items`) → mute setting → shake wrapper
 (Réglages → Secousses wraps `camera.shake`) → `createUI` → `input.attach` → `resize()` → `installDebug` →
 `game.newWorld()` → state `TITLE` (+ storage / corrupt notices) → `requestAnimationFrame`. The service worker is
@@ -342,8 +486,10 @@ registered only off localhost, not on `file:`, not with `?nosw` / `?debug`.
   after Effacer / Transférer (never on death).
 - `game.startLife()`: `createRun(save, run)` → `applyUpgrades` → `hazards.reset` / `entities.reset(gen,
   run.lifeSeed)` → `player.reset(spawn)` → particles / HUD / coach reset, Charge button visibility, `camera.snap()`.
-- `game.startGame()` (title Jouer / Continuer): first time in the session a banner, then `?at` / `?x&y` /
-  `?salvage` (`debug.applyStartFlags`).
+- `game.startGame()` (title Jouer / Continuer): first time in the session `?at` / `?x&y` / `?salvage`
+  (`debug.applyStartFlags`, true when it teleported), then the Albatros banner unless it teleported. It never
+  unlocks the audio itself: the title button does it inside its gesture (`?autostart` has no gesture, so the
+  context waits for the first touch / key instead of raising autoplay warnings).
 
 ### Game context and hooks
 
@@ -367,7 +513,7 @@ mapReturn, lifeStarted, saveStatus, storageWarned }`. `game.safe` = safe-area in
 | `setState(s)` | see below; `setState('SHOP')` from the workbench |
 | `respawn()` | death overlay Repartir: `startLife()`, `PLAYING`, `respawn` sound, banner « BALISE DE RAPPEL » |
 | `explosion(...)` | → `hazards.explode` (debug) |
-| `tileBroken(tx, ty, id)` | `rock` particles in the tile colour, `coach.onTileBroken` (rubble → « Passage dégagé » tip) |
+| `tileBroken(tx, ty, id)` | `tile` particles (`material` = tile key: chunks in the tile's colours), `coach.onTileBroken` (rubble → « Passage dégagé » tip) |
 
 Shell actions: `startGame, requestPause` (during the death drift → straight to `DEAD`), `recall` (Pause → Balise de
 rappel: `player.die('recall', { force: true })`), `buy(key)` (`buyUpgrade` → persist → `applyUpgrades` → `buy`
@@ -411,7 +557,7 @@ injected stick > touch stick > gamepad stick > keyboard (diagonals normalised). 
 (`TOUCH.deadZone` 0.18, full thrust at `fullTilt` 0.85).
 - Touch: floating stick on the left half (radius 48 CSS px, the base follows a thumb pulled past 1.25 R, a thumb
   resting through `resetAll()` is adopted); round buttons Boost (bottom-right), Frein (left of it), Charge (above
-  Boost, hidden until the Explosives: `setButtonVisible`), pill Action (`setContextAction(label | null)`, above
+  Boost, hidden until the Explosives: `setButtonVisible`), pill Action (`setContextAction(label | null)`, 124 × 46 CSS px, above
   Frein), square Carte and Pause top-right. Hit test with a 12 px pad (8 for the small buttons). Sliding a finger
   between round buttons switches them (never onto / off Carte or Pause); a button hidden under a finger is released.
 - Keyboard by `event.code` (physical key, so WASD = ZQSD on AZERTY): arrows / WASD thrust, Shift / X brake, Space
@@ -430,14 +576,14 @@ Continuer with the salvage and equipment line, Réglages, stats, controls line, 
 Réglages (Son, Assistance inertielle, Secousses, Astuces, Commandes, Transférer, Effacer → armed confirmation);
 Commandes (touch / keyboard / gamepad); Transférer (`DERIVE1:` code, copy, import asks twice); Pause (status chips:
 salvage carried / deposited, O2, equipment icons; Reprendre, Carte, Journaux x/9, Commandes, Réglages, Balise de
-rappel → armed confirmation); Carte (Fermer only); Établi (salvage pill, 2-column cards: icon, level pips, current →
-next effect, cost / MAX; Soute à charges hidden until the Explosives; fits 750 × 342 without scrolling); Journal
+rappel → armed confirmation); Carte (Fermer, and on desktop a Tab / M / Échap hint in the bottom-right corner); Établi (salvage pill, 2-column cards: icon, level pips, current →
+next effect (the next value drops the words it shares with the current one: « Coque 100 → 125 »), cost / MAX; Soute à charges hidden until the Explosives; fits 750 × 342 without scrolling); Journal
 (terminal, typewriter at 70 char/s, a tap on the text or Passer completes it, then Fermer); Journaux (9 slots,
 unread ones disabled); Mort (« Signal perdu », cause, beacon line, lost / kept columns, life stats, Repartir);
 Victoire (canvas cinematic at the game's internal resolution, 13.6 s, skippable: the capsule leaves the Maelström,
 Earth grows (`celestial.earth`), re-entry plasma, parachute over the ocean; then the stats panel: play time, deaths,
 map %, logs x/9, salvage, returns; Continuer l'exploration (new life at the Albatros) / Titre). The overlay canvas
-is opaque, so the renderer's own VICTORY cinematic (`render.js _cinematic`) runs unseen underneath (see Integration).
+is opaque; the renderer draws only the frozen world under it (no second cinematic).
 Buttons fire on pointerup of the finger that pressed them (a resting stick thumb never blocks a menu); destructive
 confirmations put Annuler first, stay disabled 550 ms and move away from the finger. Keyboard focus navigation
 (arrows, Entrée / Espace, Échap / P back, E closes the Établi, Tab / M close the map) is captured before `input.js`.
@@ -448,7 +594,8 @@ confirmations put Annuler first, stay disabled 550 ms and move away from the fin
 Astuces), with touch / keyboard / gamepad texts, only when no other tip is on screen: `move` (1.2 s after the start),
 `brake` (2.5 s above 90 px/s or after 25 s; skipped if the player brakes first), `action` (first interactable),
 `door` (locked door without the keycard), `salvage`, `deposit`, `o2`, `fuel`, `satellite`, `belt`, `rubble` (near the
-plug without explosives), `charge` (Explosives found), `blast` (rubble destroyed), `heat`, `flare` (a sun pulsing
+plug without explosives), `charge` (Explosives found), `blast` (rubble destroyed), `heat` (without the shield) / `heatShield` (with it: « sans l’annuler », shelter in the
+observatory), `flare` (a sun pulsing
 nearby), `gravity` (critical gravity), `storm`.
 
 ### Debug (`debug.js`)
@@ -459,7 +606,8 @@ rubble | record id>` `?x=&y=` (px from the centre) `?items=all|keycard,…` `?sa
 resume(), freeze(b), step(n), player(), setPlayer(fields), teleport(x, y), teleportTo(target)` (free spot next to
 it; doors and the rubble from outside), `spotNear(x, y, dx, dy), give(item | 'all'), setSalvage(n), setBank(n),
 die(cause), hazards(), entities(), save(), run(), gen(), world.get(tx, ty) / world.at(x, y), ui(), info(), input: {
-set, clear, tap, layout, state }`.
+set, clear, tap, layout, state }`. `teleportTo('maelstrom' | 'charybde')` stands off toward the sector centre where
+the hole pulls with half the base thrust (861 / 497 px), never next to the horizon.
 
 ### PWA, e2e
 
@@ -471,9 +619,86 @@ landscape, icons 192 / 512 / maskable 512 (`icons/`, generated by the presentati
 at ×4): title, real CDP touches for the stick (2D, analog), Frein, Boost, button slides, keyboard codes, pickup +
 dock deposit, Établi purchase by the context button, Orion door without / with the keycard, Charge on the Tycho
 rubble, sun death → death overlay → respawn (equipment kept, carried salvage lost), map, log + Journaux, Balise de
-rappel (double tap never confirms), portrait overlay, hit-stop ticks, menus under a resting thumb, gamepad blocking,
+rappel (double tap never confirms), asphyxia death, O2 canister magnet (waits while the tank is full), Maelström
+death without the Ancre, heat shield / Ancre multipliers, portrait overlay, hit-stop ticks, menus under a resting thumb, gamepad blocking,
 victory (refused without the anchor, cinematic, stats, continue), settings / transfer round trip, reload keeps the
-save, armed erase, blocked storage notice, portrait boot logo, zero console errors. Screenshots:
+save, armed erase, blocked storage notice, portrait boot logo, desktop 1280 × 720 keyboard session (no touch
+controls, WASD, Tab, Échap), zero console errors or warnings. Screenshots:
 `tests/e2e/screenshots/`.
 
 ## Integration
+
+Owner: the integration stage (it owns every file in `derive/` from here on). This section says what works now, how
+to run and check it, the order of updates, what integration changed, and what is still unproven.
+
+### State
+
+The game is playable end to end in Chromium: title → Albatros → debris, dock deposit, Établi → Colibri keycard →
+Orion (locked doors, lasers, turrets, armory explosives, refill station, locker) → Tycho rubble blasted → heat
+shield → Hélios anchor → Ulysse → re-entry cinematic → stats → keep exploring. Death by sun, heat, black hole,
+asphyxia, impact, laser, turret, own charge, storm and the Balise de rappel all go through the same death overlay
+and respawn (equipment kept, carried salvage lost). Saves survive a reload; the `DERIVE1:` code round-trips.
+Boot has zero console errors or warnings at iPhone 13 landscape (touch) and at 1280 × 720 (keyboard).
+
+### How to run and check
+
+| Command | What it proves |
+|---|---|
+| `npm run serve` → `http://localhost:8080/index.html` | manual play (SW off on localhost) |
+| `npm test` | 89 unit tests: simulation, progression solver on 2 seeds, presentation helpers, font coverage |
+| `npm run test:e2e` | 31 real-browser steps (DESIGN §14 and more, see Shell → PWA, e2e) |
+| `npm run solver [seed]` | every §6.4 rule, thermal cost with / without the shield |
+| `npm run feel [seed]` (`tools/feel.mjs`) | flight numbers: time to cruise, brake, coast, fuel at cruise, belt crossings at 80 / 140 / 250 px/s, shielded Hélios approach by brake point |
+| `npm run tour -- <outDir> [stops] [cssW cssH]` (`tools/tour.mjs`) | the real game at iPhone 13 landscape, one PNG per place (19 stops incl. frozen close-ups of the Maelström and a sun) + map, pause, Établi; fails on any console error or warning |
+
+### Update order (one fixed tick, `main.js updatePlaying`)
+
+`input.beginTick` → Pause / Carte → `player.update` → `hazards.update` → `entities.update` (dock: deposit through
+`game.deposit`, refill, charges) → `particles.update` → `camera.update` → `hud.update` → fog / place names /
+discoveries (polled) → context button → `coach.update` → deposit toast timer → autosave → death timer →
+`input.endTick`. Rendering (`renderer.render(alpha)`) runs every rAF and drives the audio loops and ambience.
+
+### What integration changed
+
+- **Fuel at cruise** (player.js, config `PLAYER.cruiseFlame`): holding the stick along the motion at cruise used to
+  burn 6 u/s for nothing (a beginner holding the stick to Orion emptied the tank halfway, 23 s at cruise vs 16.7 s
+  of fuel). Fuel now pays for the velocity change actually applied; a 0.25 pilot flame keeps the feedback.
+- **Heat** (config `SUNS.shieldMul` 0.1 → 0.06, `shelteredMul` 0.05 → 0.01): the shielded approach to Hélios cost
+  ~63 hull at cruise and the observatory itself burnt 3 hull/s with the shield; now 11–43 hull for a braking
+  approach and a near-safe interior (0.4 hull/s shielded). Solver: 331 hull without the shield (≥ 300), 19 with it
+  (≤ 40). Item text and README no longer say « ÷ 10 »; a `heatShield` tip explains the shield does not cancel heat.
+- **Rendering order**: celestial bodies are drawn before entities and the astronaut (the accretion disk used to
+  hide the astronaut and the asteroids within ~110 px of the Maelström).
+- **Radar**: at most 6 arrows (nearest first, the Albatros always), a top-column gap that follows the banner / zone
+  name / warnings, slot search that never pushes an arrow into the touch controls (one used to sit under Charge) and
+  drops an arrow rather than overlapping labels.
+- **Font**: `Ö` / `Ä` glyphs (« LE MAELSTR M » on the HUD and the map); a readable comma; `hasGlyphs()` and a unit
+  test over every HUD / map string (POI and zone names, items, tips, toasts).
+- **Map labels**: Mistral below its icon, Charybde above the Maelström, a wider gap after the Albatros (they collided).
+- **Touch pill**: 124 CSS px, 12 px text, no wrap (« RAVITAILLER » overflowed); `HUD_LAYOUT.bottomRightCss.w` 232.
+- **Établi texts**: « Poussée 100 % → 115 % », « Capacité 100 u → 125 u ».
+- **Wiring**: `new Particles(game)` (debris chunks bounce), `tileBroken` spawns `tile` chunks in the tile's colours.
+- **e2e**: asphyxia, magnet, Maelström death, shield / anchor multipliers, desktop keyboard session.
+
+### Feel check (numbers from `tools/feel.mjs`, seed 12345)
+
+Cruise (140 px/s) in 0.83 s; brake stop from cruise in 0.55 s over 37 px; the assist coasts from cruise to 5 px/s in
+8.8 s over ~330 px (a drift, as intended; Frein is the precise stop). Belt, straight radial lines without steering:
+at 80 px/s 1 hull on average, 46/48 crossings unhurt; at 140 px/s 3 hull, 35/48 unhurt; at 250 px/s 11 hull (worst
+45). O2 150 s vs 12 s to Colibri and 23 s to Orion at cruise: ring 1 plus a first Orion trip fits, and Orion has a
+refill station. Shielded Hélios approach from the north: braking between y = 3200 and 3260 arrives with 57–89
+hull; braking at 3180 leaves 27; a boosted dash overshoots through the south opening into heat (the tip says not to
+linger outside, not to boost). Headless Chromium (software canvas): simulation 0.03–0.07 ms per tick, render 1.0–3.6 ms
+per frame (Hélios and the dock are the heaviest).
+
+### Known limits
+
+- Never run on a real iPhone or in WebKit: every check is Chromium. Safe areas were checked by forcing 47 / 21 px
+  insets on the probe (HUD, buttons and menus move correctly), not on a device.
+- `loadSprites()` ~0.4 s in headless Chromium; unmeasured on a phone.
+- Level feel is proven by the strict solver grid, scripted flights and screenshots, not by a human playtest: turret
+  placement, vent timing and laser cycles in the 3–5-tile corridors have not been played by hand.
+- The Hélios observatory is only 13 tiles tall with openings north and south on the approach axis: arriving fast
+  means overshooting into the heat on the far side. Tuned to be fair for a braking pilot, still the hardest spot.
+- Interiors are a top-down cutaway (visible from outside, dimmed by the darkness layer).
+- The moon rock texture shows its tile-stepped light / dark patches at close range (craters as 8 px blocks).

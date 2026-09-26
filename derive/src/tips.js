@@ -54,6 +54,7 @@ export const TIPS = {
   },
   blast: { all: ['Passage dégagé !', 'Les charges se rechargent au dock ou au casier d’Orion'] },
   heat: { all: ['Surchauffe : la chaleur ronge la coque', 'Sans bouclier thermique, fais demi-tour'] },
+  heatShield: { all: ['Le bouclier thermique réduit la chaleur, sans l’annuler', 'Ne traîne pas dehors : la coque de l’observatoire t’abrite'] },
   flare: { all: ['Éruption ! Le soleil pulse avant de cracher', 'Abrite-toi derrière un rocher ou une coque'] },
   gravity: { all: ['Gravité critique : le trou noir t’aspire', 'Freine et pousse à l’opposé, vite'] },
   storm: { all: ['Tempête ionique : le bord du secteur', 'Elle ronge la coque : reviens vers le centre'] },
@@ -130,7 +131,7 @@ export class Coach {
     if (p.o2Low) this._offer('o2');
     if (p.fuelEmpty) this._offer('fuel');
     const h = g.hazards;
-    if (h.heatAtPlayer > 0) this._offer('heat');
+    if (h.heatAtPlayer > 0) this._offer(g.save.items.heatshield ? 'heatShield' : 'heat');
     if (h.gravCritical) this._offer('gravity');
     if (h.stormIntensity > 0.3) this._offer('storm');
     for (let i = 0; i < h.suns.length; i++) {

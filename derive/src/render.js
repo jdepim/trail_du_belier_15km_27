@@ -1,7 +1,8 @@
 // Rendering (DESIGN §9): integer-scaled internal canvas (CSS upscale), camera, parallax starfield with
-// regional nebulae, chunk-cached tiles with baked light direction, celestial bodies, entities, the
-// astronaut and its flames, interior darkness pierced by the headlamp and panel lights, screen
-// overlays (heat, ion storm, black hole vignette), the HUD, the map state and the victory cinematic.
+// regional nebulae, chunk-cached tiles with baked light direction, celestial bodies (below everything that
+// moves), entities, the astronaut and its flames, interior darkness pierced by the headlamp and panel lights, screen
+// overlays (heat, ion storm, black hole vignette), the HUD and the map state (the victory cinematic is
+// ui.js's own opaque canvas: in VICTORY the frozen world is drawn underneath).
 // render() also drives the audio loops and the ambience zone from the game state (the simulation
 // never calls audio.setLoop / setZone).
 //
@@ -13,19 +14,18 @@
 //     resize(cssW, cssH, dpr)   scale = max(1, floor(deviceH / VIEW.targetHeight)); the canvas holds the
 //                               internal W×H image, CSS upscales it (image-rendering: pixelated) and centres
 //                               it; sets game.view = { w, h, scale, cssToInternal, camX, camY }
-//     render(alpha)             TITLE: drifting starfield · MAP: drawMap · VICTORY: fade then cinematic ·
-//                               every other state: the world (frozen behind DOM overlays when not ticking)
+//     render(alpha)             TITLE: drifting starfield · MAP: drawMap · every other state: the world
+//                               (frozen behind the DOM overlays when not ticking; no HUD in VICTORY)
 //     invalidateAll()           new world: drop cached chunks and the map terrain
-//     victoryT / victoryDone    cinematic clock (s) / true once VICTORY_CINE.total has elapsed
 //     chunkBuilds, cellPatches  cache statistics (tests / debug)
-import { TILE, CHUNK, VIEW, CAMERA, CENTER, ZONES, POI_BY_KEY, HAZARDS, SUNS } from './config.js';
+import { TILE, CHUNK, VIEW, CAMERA, CENTER, ZONES, ZONE_ID, POI_BY_KEY, HAZARDS, SUNS } from './config.js';
 import { TILES, TILE_ID as T, SOLID, LIGHT } from './tiles.js';
 import { getTileTexture, tileVariant, drawSprite, getSprite, getGlow, backdrop, celestial } from './sprites.js';
 import { drawMap, invalidateMap } from './mapview.js';
 import { drawText } from './hud.js';
 import { raycast } from './physics.js';
 import { hash2 } from './rng.js';
-import { LIGHT_DIR, BACKDROP, NEBULA_REGIONS, DARK, FX, VICTORY_CINE } from './render-config.js';
+import { LIGHT_DIR, BACKDROP, NEBULA_REGIONS, DARK, FX } from './render-config.js';
 
 const TAU = Math.PI * 2;
 const CHUNK_PX = CHUNK * TILE;
@@ -34,7 +34,8 @@ const OUTLINE = '#05070c';
 const SPACE = T.SPACE, DOOR_L = T.DOOR_LOCKED, DOOR_O = T.DOOR_OPEN, WINDOW = T.WINDOW;
 const IS_DOOR = new Uint8Array(256); IS_DOOR[DOOR_L] = 1; IS_DOOR[DOOR_O] = 1;
 const DARK_ZONE = new Uint8Array(256);
-for (const z of ZONES) DARK_ZONE[z.id] = z.dark ? 1 : 0;
+const ZONE_DARKNESS = new Float32Array(256); // darkness alpha of an unlit cell, per zone
+for (const z of ZONES) { DARK_ZONE[z.id] = z.dark ? 1 : 0; ZONE_DARKNESS[z.id] = DARK.zoneBase[z.key] ?? DARK.base; }
 const AST_NAMES = [0, 1, 2].map((s) => [0, 1, 2, 3].map((v) => `ast_${s}_${v}`));
 const ITEM_SPRITE = { keycard: 'item_keycard', explosives: 'item_explosives', heatshield: 'item_heatshield', anchor: 'item_anchor' };
 const ITEM_GLOW = { keycard: 'cyan', explosives: 'red', heatshield: 'orange', anchor: 'violet' };
@@ -45,6 +46,7 @@ const MOTE = ['#5a2a8a', '#9a3a9a', '#e05a5a', '#ffa040', '#fff0c0'];
 const DASH = [4, 6];
 const NO_DASH = [];
 const KEY_HINT = new Map(); // context label -> 'E : LABEL' (built once per label)
+const PAD_HINT = new Map(); // context label -> 'Y : LABEL' (gamepad)
 
 function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 
@@ -128,7 +130,6 @@ export class Renderer {
     this._pp = { x: 0, y: 0 };
     this._ray = { x: 0, y: 0, tx: 0, ty: 0, t: 0 };
     this.clock = 0; this._last = 0;
-    this.victoryT = 0; this.victoryDone = false;
     this._zone = '';
     this._lightCap = 0;
     this.darkCanvas = null; this.glowCanvas = null;
@@ -168,20 +169,9 @@ export class Renderer {
     ctx.imageSmoothingEnabled = false;
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     const state = g.state;
-    if (state !== 'VICTORY') { this.victoryT = 0; this.victoryDone = false; }
-    if (!g.world || !g.player || state === 'TITLE') { this._title(ctx); this._driveAudio(state); return; }
-    if (state === 'MAP') { drawMap(ctx, g, this.W, this.H); this._driveAudio(state); return; }
-    if (state === 'VICTORY') {
-      this.victoryT += rdt;
-      if (this.victoryT >= VICTORY_CINE.total) this.victoryDone = true;
-      if (this.victoryT > VICTORY_CINE.fade) { this._cinematic(ctx, this.victoryT - VICTORY_CINE.fade); this._driveAudio(state); return; }
-    }
-    this._world(ctx, alpha, state);
-    if (state === 'VICTORY') {
-      ctx.globalAlpha = clamp01(this.victoryT / VICTORY_CINE.fade);
-      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, this.W, this.H);
-      ctx.globalAlpha = 1;
-    }
+    if (!g.world || !g.player || state === 'TITLE') this._title(ctx);
+    else if (state === 'MAP') drawMap(ctx, g, this.W, this.H);
+    else this._world(ctx, alpha, state);
     this._driveAudio(state);
   }
 
@@ -197,11 +187,13 @@ export class Renderer {
     this._backdrop(ctx, cx, cy, t);
     this._tiles(ctx, cx, cy);
     this._tileFx(ctx, cx, cy, t);
+    // suns and black holes lie in the plane below everything that moves: the astronaut, asteroids
+    // and debris stay visible in front of a corona or an accretion disk
+    this._bodies(ctx, cx, cy);
     this._entitiesLit(ctx, cx, cy, alpha, t);
     this._player(ctx, cx, cy, t);
     if (g.particles) g.particles.draw(ctx, cx, cy, 'lit');
     this._darkness(ctx, cx, cy, t);
-    this._bodies(ctx, cx, cy);
     this._emissive(ctx, cx, cy, alpha, t);
     if (g.particles) g.particles.draw(ctx, cx, cy, 'emissive');
     this._overlays(ctx, t);
@@ -239,9 +231,8 @@ export class Renderer {
     const neutral = BACKDROP.nebulaBase * (1 - Math.min(1, sum));
     if (neutral > 0.01) this._tileImage(ctx, nb.neutral, ox, oy, nS, neutral);
     // star layers + twinkle
-    const Ts = BACKDROP.tile;
     for (let li = 0; li < backdrop.layers.length; li++) {
-      const par = BACKDROP.layers[li].parallax;
+      const par = BACKDROP.layers[li].parallax, Ts = BACKDROP.layers[li].tile;
       const lx = -Math.round((((cx * par) % Ts) + Ts) % Ts), ly = -Math.round((((cy * par) % Ts) + Ts) % Ts);
       this._tileImage(ctx, backdrop.layers[li], lx, ly, Ts, 1);
       const tw = backdrop.twinklers[li];
@@ -583,7 +574,7 @@ export class Renderer {
         if (!c.active) continue;
         const x = c.prevX + (c.x - c.prevX) * alpha, y = c.prevY + (c.y - c.prevY) * alpha;
         if (!this._visible(x, y, cx, cy, 50)) continue;
-        drawSprite(ctx, 'charge', this._chargeOn(c, t) ? 1 : 0, x - cx, y - cy);
+        drawSprite(ctx, 'charge_bomb', this._chargeOn(c, t) ? 1 : 0, x - cx, y - cy);
       }
       // asteroids
       for (const a of hz.asteroids) {
@@ -707,7 +698,7 @@ export class Renderer {
         const id = types[wi];
         const s = SOLID[id];
         solid[k] = s; space[k] = id === SPACE ? 1 : 0;
-        let ind = DARK_ZONE[zones[wi]];
+        let ind = DARK_ZONE[zones[wi]] ? zones[wi] : 0;
         if (ind && s) {
           // a hull tile facing open space is lit by the stars: only buried walls stay dark
           if ((tx > 0 && types[wi - 1] === SPACE) || (tx < wW - 1 && types[wi + 1] === SPACE) || (ty > 0 && types[wi - wW] === SPACE) || (ty < wH - 1 && types[wi + wW] === SPACE)) ind = 0;
@@ -777,7 +768,7 @@ export class Renderer {
         light += lampLit;
       }
       const ind = indoor[k];
-      const a = ind ? DARK.base * (1 - clamp01(light)) : 0;
+      const a = ind ? ZONE_DARKNESS[ind] * (1 - clamp01(light)) : 0;
       dImg[o] = 3; dImg[o + 1] = 4; dImg[o + 2] = 12; dImg[o + 3] = Math.round(a * 255);
       // coloured light: tile / dynamic sources everywhere but open space, warm headlamp tint indoors
       const s = space[k] ? 0 : DARK.glow * 255;
@@ -878,6 +869,7 @@ export class Renderer {
       const frames = celestial.disk[b.key];
       if (!frames) continue;
       const sx = b.x - cx, sy = b.y - cy;
+      this._bhDust(ctx, b, sx, sy, t);
       const R = b.diskR * 2.2;
       if (sx + R < 0 || sy + R < 0 || sx - R > this.W || sy - R > this.H) continue;
       const f = frames[Math.floor(t * FX.diskFps) % frames.length];
@@ -886,9 +878,9 @@ export class Renderer {
       ctx.globalCompositeOperation = 'lighter';
       const n = b.key === 'maelstrom' ? FX.bhMotes : FX.bhMotes >> 1;
       for (let i = 0; i < n; i++) {
-        const ph = (t * (0.07 + (i % 7) * 0.012) + i * 0.618) % 1;
+        const ph = (t * (0.07 + (i % 7) * 0.012) + i * 0.5698402910) % 1;
         const r = b.diskR * 2 * (1 - ph) + b.horizon * ph;
-        const a = i * 2.39996 + t * 0.25 + (b.diskR * 2) / r * 0.9;
+        const a = ((i * 0.7548776662) % 1) * TAU + t * 0.25 + (b.diskR * 2) / r * 0.9;
         const x = Math.round(sx + Math.cos(a) * r), y = Math.round(sy + Math.sin(a) * r);
         ctx.globalAlpha = Math.min(1, ph * 3) * 0.9;
         ctx.fillStyle = MOTE[Math.min(4, Math.floor(ph * 5))];
@@ -897,6 +889,38 @@ export class Renderer {
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = 'source-over';
     }
+  }
+
+  /**
+   * Faint dust spiralling into a black hole over its whole pull radius (DESIGN §6.1 visual aid): each
+   * mote falls from dustR to the horizon on a fixed cycle, turning faster as it gets closer. Stateless
+   * (a function of time), only the motes inside the view are drawn.
+   */
+  _bhDust(ctx, b, sx, sy, t) {
+    const far = FX.bhDustR * (b.diskR / 130);
+    const W = this.W, H = this.H;
+    const dx = Math.max(0, Math.abs(sx - W / 2) - W / 2), dy = Math.max(0, Math.abs(sy - H / 2) - H / 2);
+    if (dx * dx + dy * dy > far * far) return;
+    const n = FX.bhDust;
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < n; i++) {
+      // R2 low-discrepancy sequence: phases and angles uncorrelated (the golden ratio pair is not)
+      const ph = (t * (0.05 + (i % 5) * 0.008) + i * 0.5698402910) % 1;
+      const r = far * (1 - ph) + b.horizon * ph;
+      const a = ((i * 0.7548776662) % 1) * TAU + t * 0.12 + (b.diskR * 3) / r;
+      const x = Math.round(sx + Math.cos(a) * r), y = Math.round(sy + Math.sin(a) * r);
+      if (x < -3 || y < -3 || x >= W + 3 || y >= H + 3) continue;
+      const k = Math.min(1, ph * 4) * (0.3 + 0.6 * ph);
+      ctx.fillStyle = MOTE[Math.min(4, Math.floor(ph * 5))];
+      ctx.globalAlpha = k;
+      ctx.fillRect(x, y, 1, 1);
+      // a short trail along the spiral (the mote came from further out, a little behind)
+      const a2 = a - 5 / r, r2 = r + 2.5;
+      ctx.globalAlpha = k * 0.45;
+      ctx.fillRect(Math.round(sx + Math.cos(a2) * r2), Math.round(sy + Math.sin(a2) * r2), 1, 1);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   _flareRing(ctx, s, sx, sy) {
@@ -1032,8 +1056,10 @@ export class Renderer {
     const x = Math.round(this._pp.x) - cx + 0.5, y = Math.round(this._pp.y) - cy + 0.5;
     const c = Math.cos(p.angle), s = Math.sin(p.angle);
     const boost = p.boostT > 0;
+    const h = hash2(this.frameNo, 3, 0xf1a3);
+    const flick = (h & 255) / 255, flick2 = ((h >>> 8) & 255) / 255;
     if (p.thrust > 0 || boost) {
-      const len = boost ? 9 + Math.random() * 3 : 2 + p.thrust * 4 + Math.random() * 1.6;
+      const len = boost ? 9 + flick * 3 : 2 + p.thrust * 4 + flick * 1.6;
       for (let side = -1; side <= 1; side += 2) {
         const nx = x - c * 3.1 - s * side * 1.3, ny = y - s * 3.1 + c * side * 1.3;
         for (let k = 0; k < len; k++) {
@@ -1050,7 +1076,7 @@ export class Renderer {
       const vx = p.vx / p.speed, vy = p.vy / p.speed;
       for (let side = -1; side <= 1; side += 2) {
         const nx = x + c * 1.5 - s * side * 3.6, ny = y + s * 1.5 + c * side * 3.6;
-        const len = 2 + Math.random() * 2;
+        const len = 2 + flick2 * 2;
         for (let k = 1; k < len; k++) {
           ctx.globalAlpha = 1 - k / len;
           ctx.fillStyle = RETRO[Math.min(2, k - 1)];
@@ -1074,9 +1100,14 @@ export class Renderer {
       ctx.imageSmoothingEnabled = false;
     }
     if (hz.heatLevel > 0.01) {
-      ctx.globalAlpha = FX.heatTint * hz.heatLevel * (0.85 + 0.15 * Math.sin(t * 9));
+      const k = hz.heatLevel * (0.85 + 0.15 * Math.sin(t * 9));
+      ctx.globalAlpha = FX.heatTint * k;
       ctx.fillStyle = '#ff5a14';
       ctx.fillRect(0, 0, W, H);
+      ctx.imageSmoothingEnabled = true;
+      ctx.globalAlpha = FX.heatEdge * k;
+      ctx.drawImage(backdrop.heatVignette, 0, 0, W, H);
+      ctx.imageSmoothingEnabled = false;
     }
     const si = hz.stormIntensity;
     if (si > 0.02) {
@@ -1113,95 +1144,13 @@ export class Renderer {
     ctx.fillRect(x + r - 2, y - r, 3, 1); ctx.fillRect(x + r, y - r, 1, 3);
     ctx.fillRect(x - r, y + r, 3, 1); ctx.fillRect(x - r, y + r - 2, 1, 3);
     ctx.fillRect(x + r - 2, y + r, 3, 1); ctx.fillRect(x + r, y + r - 2, 1, 3);
-    const touch = !!(g.input && g.input.touchEnabled);
-    let label = it.label;
-    if (!touch) {
-      label = KEY_HINT.get(it.label);
-      if (!label) { label = 'E : ' + it.label; KEY_HINT.set(it.label, label); }
-    }
+    // touch: the contextual DOM button already names the action; keyboard / gamepad get the key hint
+    if (g.input && g.input.touchEnabled) return;
+    const pad = !!(g.input && g.input.padConnected);
+    const cache = pad ? PAD_HINT : KEY_HINT;
+    let label = cache.get(it.label);
+    if (!label) { label = (pad ? 'Y : ' : 'E : ') + it.label; cache.set(it.label, label); }
     drawText(ctx, label, x, y - r - 11, '#e8f8ff', LABEL_OPTS);
-  }
-
-  // ================================================================ victory cinematic
-
-  _cinematic(ctx, t) {
-    const W = this.W, H = this.H;
-    const flightEnd = VICTORY_CINE.flight, reEnd = flightEnd + VICTORY_CINE.reentry;
-    ctx.fillStyle = '#010207'; ctx.fillRect(0, 0, W, H);
-    const speed = 40 + Math.min(1, t / 2) * 520;
-    // star streams (flying "up": stars stream down)
-    const Ts = BACKDROP.tile;
-    for (let li = 0; li < backdrop.layers.length; li++) {
-      const par = (li + 1) * 0.5;
-      const off = (t * speed * par) % Ts;
-      const img = backdrop.layers[li];
-      for (let k = 0; k < 3; k++) {
-        ctx.globalAlpha = k === 0 ? 1 : 0.35 / k;
-        const oy = Math.round(off - k * 3 * par) - Ts;
-        for (let y = oy; y < H; y += Ts) for (let x = 0; x < W; x += Ts) ctx.drawImage(img, x, y);
-      }
-    }
-    ctx.globalAlpha = 1;
-    const earth = celestial.earth;
-    const k = clamp01(t / reEnd);
-    const size = Math.round(12 + Math.pow(k, 2.2) * H * 2.6);
-    const ex = Math.round(W / 2 - size / 2), ey = Math.round(H * 0.18 - size * 0.2);
-    ctx.drawImage(earth, 0, 0, earth.width, earth.height, ex, ey, size, size);
-    const capsule = getSprite('capsule_ship');
-    const bob = Math.round(Math.sin(t * 3) * 1.5);
-    const shipX = W / 2, shipY = H * 0.62 + bob;
-    if (t > flightEnd && t < reEnd) {
-      // re-entry plasma around the heat shield (the capsule falls nose-down into the atmosphere)
-      const q = (t - flightEnd) / VICTORY_CINE.reentry;
-      const a = Math.sin(q * Math.PI);
-      ctx.globalCompositeOperation = 'lighter';
-      this._glowAt(ctx, 'orange', 24, shipX, shipY - 14, a);
-      this._glowAt(ctx, 'white', 12, shipX, shipY - 12, a * 0.8);
-      ctx.globalAlpha = a;
-      for (let i = 0; i < 26; i++) {
-        const sx = shipX + ((hash2(i, Math.floor(t * 20), 3) & 31) - 16), len = 6 + (hash2(i, 5, 9) & 15);
-        ctx.fillStyle = FLAME[i % 5];
-        ctx.fillRect(Math.round(sx), Math.round(shipY - 8 + (i % 4) * 3), 1, len);
-      }
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = 1;
-    } else if (t <= flightEnd) {
-      // main engine
-      ctx.globalCompositeOperation = 'lighter';
-      for (let i = 0; i < 8; i++) {
-        ctx.fillStyle = FLAME[Math.min(4, i >> 1)];
-        ctx.globalAlpha = 1 - i / 9;
-        ctx.fillRect(Math.round(shipX) - 1, Math.round(shipY + 9 + i + (Math.random() * 2 | 0)), 3, 1);
-      }
-      this._glowAt(ctx, 'orange', 12, shipX, shipY + 12, 0.6);
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = 1;
-    }
-    if (capsule) drawSprite(ctx, 'capsule_ship', 0, shipX, shipY);
-    if (t > reEnd) {
-      // under the parachute, the sky turns blue
-      const q = clamp01((t - reEnd) / 1.5);
-      ctx.globalAlpha = q;
-      for (let i = 0; i < 6; i++) { ctx.fillStyle = SKY[i]; ctx.fillRect(0, Math.floor((H * i) / 6), W, Math.ceil(H / 6) + 1); }
-      ctx.globalAlpha = 1;
-      if (q > 0.5) {
-        const py = Math.round(H * 0.5 + (t - reEnd) * 4);
-        this._parachute(ctx, Math.round(W / 2), py - 26);
-        ctx.strokeStyle = '#d8dce4'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(W / 2 - 13, py - 24); ctx.lineTo(W / 2 - 3, py - 6); ctx.moveTo(W / 2 + 13, py - 24); ctx.lineTo(W / 2 + 3, py - 6); ctx.stroke();
-        drawSprite(ctx, 'capsule_ship', 0, W / 2, py + 2);
-      }
-    }
-  }
-
-  _parachute(ctx, x, y) {
-    for (let j = 0; j < 12; j++) {
-      const w = Math.round(Math.sqrt(1 - ((12 - j) / 12) ** 2) * 16);
-      for (let i = -w; i < w; i++) {
-        ctx.fillStyle = ((i + 16) >> 2) % 2 ? '#ffffff' : '#ff7a20';
-        ctx.fillRect(x + i, y + j, 1, 1);
-      }
-    }
   }
 
   // ================================================================ audio driving
@@ -1228,7 +1177,7 @@ export class Renderer {
   _ambienceZone(p, hz) {
     const world = this.game.world;
     const z = world.zoneAt(p.x, p.y);
-    if (DARK_ZONE[z]) return z === 7 ? 'selene' : 'interior';
+    if (DARK_ZONE[z]) return z === ZONE_ID.tycho ? 'selene' : 'interior';
     const near = (key, r) => { const poi = POI_BY_KEY[key]; return Math.hypot(p.x - poi.x, p.y - poi.y) < r; };
     if (hz && hz.stormIntensity > 0.35) return 'storm';
     if (near('maelstrom', 1500) || near('charybde', 900)) return 'maelstrom';
@@ -1239,4 +1188,3 @@ export class Renderer {
 }
 
 const LABEL_OPTS = { outline: '#05060b', align: 'center' };
-const SKY = ['#1a3a78', '#2a5aa8', '#3a7ac8', '#5a9ad8', '#8ac0e8', '#c0e0f4'];

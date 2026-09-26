@@ -13,10 +13,10 @@
 //   dx=, dy=     offset (px) from that place          seed=<n>     world seed (default 12345)
 //   t=<s>        simulated seconds before the capture (default 3)     face=<deg>  facing (0 = east, 90 = south)
 //   move=<deg>   hold the thrust stick in that direction (the astronaut is free, not pinned)
-//   brake        hold the brake       items=all|keycard,explosives…   dpr=<n> (default 1)
+//   brake        hold the brake       items=all|keycard,explosives…   dpr=<n> (default devicePixelRatio: the real internal resolution)
 //   map          state MAP (reveal=all to lift the whole fog; otherwise a scripted exploration)
 //   hud=demo     banner, toast, tip and warnings      state=<STATE>   (e.g. TITLE, VICTORY, DEAD)
-//   vt=<s>       with state=VICTORY: cinematic clock  explode        a charge explodes next to the astronaut
+//   explode      a charge explodes next to the astronaut    touch   interact labels as on a touch screen
 import { FIXED_DT, POI_BY_KEY, CENTER, BELT, TILE } from '../src/config.js';
 import { generateWorld } from '../src/worldgen.js';
 import { Player } from '../src/player.js';
@@ -103,7 +103,7 @@ if (q.has('face')) { game.player.angle = num('face', 0) * Math.PI / 180; game.pl
 game.camera.snap();
 
 function resize() {
-  game.renderer.resize(innerWidth, innerHeight, num('dpr', 1));
+  game.renderer.resize(innerWidth, innerHeight, num('dpr', devicePixelRatio));
   game.camera.snap();
 }
 resize();
@@ -124,7 +124,7 @@ function tick() {
   meta.fogReveal(game.fog, p.x, p.y, 260);
   game.time += FIXED_DT;
 }
-const T = num('t', 3);
+const T = num('t', at === 'belt' ? 25 : 3); // the belt rocks need time to drift into view
 if (q.has('hud')) {
   game.hud.banner("Carte d'accès", "La carte d'accès ouvre les portes de la station Orion.", { icon: 'item_keycard' });
   game.hud.toast('Oxygène et carburant au maximum.', { color: '#8fe3ff', life: 30 });
@@ -149,7 +149,6 @@ if (q.has('map')) {
   game.state = 'MAP';
 }
 if (q.has('state')) game.state = q.get('state');
-if (game.state === 'VICTORY') game.renderer.victoryT = num('vt', 0);
 if (q.has('dead')) { game.flags.god = false; game.player.die('heat'); for (let i = 0; i < 40; i++) tick(); }
 
 let first = true;

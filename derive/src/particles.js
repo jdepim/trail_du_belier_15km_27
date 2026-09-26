@@ -128,21 +128,20 @@ export class Particles {
 
   spawn(kind, x, y, opts) {
     const o = opts || EMPTY;
-    const r = () => this._r();
     const count = o.count > 0 ? o.count : 0;
     const vx = o.vx || 0, vy = o.vy || 0, nx = o.nx || 0, ny = o.ny || 0;
     const power = o.power > 0 ? o.power : 1;
     switch (kind) {
       case 'exhaust': {
-        const n = r() < power ? 2 : 1;
+        const n = this._r() < power ? 2 : 1;
         for (let k = 0; k < n; k++) {
-          this._emit(S_DOT, x + (r() - 0.5) * 2, y + (r() - 0.5) * 2, vx + (r() - 0.5) * 30, vy + (r() - 0.5) * 30,
-            0.22 + r() * 0.25 * power, k === 0 && power > 0.7 ? 2 : 1, R_EXHAUST, true, 2.5);
+          this._emit(S_DOT, x + (this._r() - 0.5) * 2, y + (this._r() - 0.5) * 2, vx + (this._r() - 0.5) * 30, vy + (this._r() - 0.5) * 30,
+            0.22 + this._r() * 0.25 * power, k === 0 && power > 0.7 ? 2 : 1, R_EXHAUST, true, 2.5);
         }
         break;
       }
       case 'brake':
-        for (let k = 0; k < 2; k++) this._emit(S_SMOKE, x, y, vx + (r() - 0.5) * 40, vy + (r() - 0.5) * 40, 0.3 + r() * 0.2, 1, R_COLD, false, 4, 5);
+        for (let k = 0; k < 2; k++) this._emit(S_SMOKE, x, y, vx + (this._r() - 0.5) * 40, vy + (this._r() - 0.5) * 40, 0.3 + this._r() * 0.2, 1, R_COLD, false, 4, 5);
         break;
       case 'boost': {
         const sp = Math.hypot(vx, vy) || 1;
@@ -209,10 +208,10 @@ export class Particles {
         const px = -ny, py = nx;
         const n = warn ? 1 : 2;
         for (let k = 0; k < n; k++) {
-          const off = (r() - 0.5) * 2 * hw;
-          const sp = warn ? 0.5 + r() : 0.7 + r() * 0.6;
-          this._emit(S_SMOKE, x + px * off, y + py * off, vx * sp + (r() - 0.5) * 20, vy * sp + (r() - 0.5) * 20,
-            warn ? 0.35 + r() * 0.3 : 0.45 + r() * 0.3, warn ? 1 : 2, R_GAS, false, warn ? 3 : 1.2, warn ? 4 : 10);
+          const off = (this._r() - 0.5) * 2 * hw;
+          const sp = warn ? 0.5 + this._r() : 0.7 + this._r() * 0.6;
+          this._emit(S_SMOKE, x + px * off, y + py * off, vx * sp + (this._r() - 0.5) * 20, vy * sp + (this._r() - 0.5) * 20,
+            warn ? 0.35 + this._r() * 0.3 : 0.45 + this._r() * 0.3, warn ? 1 : 2, R_GAS, false, warn ? 3 : 1.2, warn ? 4 : 10);
         }
         break;
       }
@@ -220,9 +219,9 @@ export class Particles {
         // flare plasma splashing on the obstacle: embers sprayed sideways
         const px = -ny, py = nx;
         for (let k = 0; k < (count || 8); k++) {
-          const s = r() < 0.5 ? -1 : 1;
-          const sp = 40 + r() * 90;
-          this._emit(S_DOT, x, y, (px * s + nx * 0.4) * sp, (py * s + ny * 0.4) * sp, 0.4 + r() * 0.5, 1, R_FIRE, true, 1.5);
+          const s = this._r() < 0.5 ? -1 : 1;
+          const sp = 40 + this._r() * 90;
+          this._emit(S_DOT, x, y, (px * s + nx * 0.4) * sp, (py * s + ny * 0.4) * sp, 0.4 + this._r() * 0.5, 1, R_FIRE, true, 1.5);
         }
         this._flash(x, y, 12, 0.18, 'orange');
         break;
@@ -247,8 +246,8 @@ export class Particles {
         const rr = o.r || 8;
         const n = count || 8;
         for (let k = 0; k < n; k++) {
-          const a = r() * TAU, d = r() * rr, sp = 20 + r() * 70;
-          this._emit(S_CHUNK, x + Math.cos(a) * d, y + Math.sin(a) * d, vx + Math.cos(a) * sp, vy + Math.sin(a) * sp, 0.7 + r() * 0.9, r() < 0.4 ? 3 : 2, R_ROCK, false, 0.8);
+          const a = this._r() * TAU, d = this._r() * rr, sp = 20 + this._r() * 70;
+          this._emit(S_CHUNK, x + Math.cos(a) * d, y + Math.sin(a) * d, vx + Math.cos(a) * sp, vy + Math.sin(a) * sp, 0.7 + this._r() * 0.9, this._r() < 0.4 ? 3 : 2, R_ROCK, false, 0.8);
         }
         this._burst(n, S_SMOKE, x, y, 0, 0, 0, 8, 35, 0.8, 1.4, 2, R_ROCK, false, 1.5, 7, vx, vy);
         break;
@@ -260,8 +259,8 @@ export class Particles {
         this._ring(x, y, rr * 1.7, 0.4, R_FIRE);
         const n = count || 30;
         for (let k = 0; k < n; k++) {
-          const a = r() * TAU, sp = (0.3 + r() * 0.9) * rr * 3.2 * power;
-          this._emit(S_SMOKE, x + Math.cos(a) * 3, y + Math.sin(a) * 3, Math.cos(a) * sp, Math.sin(a) * sp, 0.35 + r() * 0.35, 2, R_FIRE, true, 4, 9);
+          const a = this._r() * TAU, sp = (0.3 + this._r() * 0.9) * rr * 3.2 * power;
+          this._emit(S_SMOKE, x + Math.cos(a) * 3, y + Math.sin(a) * 3, Math.cos(a) * sp, Math.sin(a) * sp, 0.35 + this._r() * 0.35, 2, R_FIRE, true, 4, 9);
         }
         this._burst(Math.round(n * 0.6), S_STREAK, x, y, 0, 0, 0, 90, 260, 0.25, 0.6, 1, R_SPARK, true, 2);
         this._burst(Math.round(n * 0.5), S_SMOKE, x, y, 0, 0, 0, 15, rr * 1.6, 1.2, 2.2, 3, R_SMOKE, false, 1.4, 8);

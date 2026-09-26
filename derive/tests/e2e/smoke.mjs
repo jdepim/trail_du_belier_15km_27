@@ -395,6 +395,64 @@ try {
     await waitState('PLAYING');
   });
 
+  await step('asphyxia: an empty O2 tank drains the hull, death « Asphyxie », respawn with a full tank', async () => {
+    await G(() => { const d = window.__derive, s = d.gen().spawn, p = d.spotNear(s.x, s.y + 320); d.teleport(p.x, p.y); d.setPlayer({ vx: 0, vy: 0, o2: 0, hull: 8 }); });
+    await waitFor(async () => (await player()).dead, 3000);
+    assert.equal((await player()).deathCause, 'asphyxia');
+    await waitState('DEAD', 4000);
+    assert.match(await G(() => document.querySelector('[data-ui=death]').innerText), /Asphyxie/);
+    await page.tap('[data-act=respawn]');
+    await waitState('PLAYING');
+    const p = await player();
+    assert.equal(p.o2, p.stats.o2Max, 'full O2 after the respawn');
+  });
+
+  await step('magnet: an O2 canister drifts to the astronaut and refills the tank (only when useful)', async () => {
+    const e = await ents();
+    const can = e.pickups.find((k) => k.kind === 'o2');
+    assert.ok(can, 'an O2 canister exists');
+    const spot = await G((c) => window.__derive.spotNear(c.x, c.y), can);
+    await G(([c, s]) => { window.__derive.teleport(s.x, s.y); window.__derive.setPlayer({ vx: 0, vy: 0 }); }, [can, spot]);
+    await settle(300);
+    assert.ok((await ents()).pickups.some((k) => k.kind === 'o2' && Math.hypot(k.x - can.x, k.y - can.y) < 1), 'full tank: the canister waits');
+    await G(() => window.__derive.setPlayer({ o2: 40 }));
+    await waitFor(async () => (await player()).o2 > 70, 2000);
+    assert.ok(!(await ents()).pickups.some((k) => k.kind === 'o2' && Math.hypot(k.x - can.x, k.y - can.y) < 1), 'canister taken');
+  });
+
+  await step('black hole: without the Ancre the Maelström swallows you (« Spaghettifié »)', async () => {
+    const hole = (await G(() => window.__derive.hazards())).blackHoles.find((b) => b.key === 'maelstrom');
+    await G((h) => { window.__derive.teleport(h.x, h.y + 150); window.__derive.setPlayer({ vx: 0, vy: 0 }); }, hole);
+    await settle(250);
+    await shot('19b-maelstrom-pull.png');
+    await waitFor(async () => (await player()).dead, 4000);
+    assert.equal((await player()).deathCause, 'bh_maelstrom');
+    await waitState('DEAD', 4000);
+    assert.match(await G(() => document.querySelector('[data-ui=death]').innerText), /Spaghettifié par le Maelström/);
+    await page.tap('[data-act=respawn]');
+    await waitState('PLAYING');
+  });
+
+  await step('heat shield cuts the heat of the Jumelles; the Ancre cuts the pull of the Maelström to a quarter', async () => {
+    await G(() => window.__derive.freeze(true));
+    const probe = () => G(() => { const d = window.__derive; d.setPlayer({ vx: 0, vy: 0 }); d.step(1); return { heat: d.hazards().heatAtPlayer, grav: d.player().gravMag }; });
+    const sun = (await G(() => window.__derive.hazards())).suns[0];
+    await G((s) => window.__derive.teleport(s.x, s.y - 350), sun);
+    const hot = await probe();
+    await G(() => window.__derive.give('heatshield'));
+    const cool = await probe();
+    assert.ok(hot.heat > 100, `unshielded heat ${hot.heat.toFixed(0)} hull/s`);
+    assert.ok(cool.heat > 0 && cool.heat < hot.heat * 0.11, `shielded heat ${cool.heat.toFixed(1)} hull/s`);
+    const hole = (await G(() => window.__derive.hazards())).blackHoles.find((b) => b.key === 'maelstrom');
+    await G((h) => window.__derive.teleport(h.x, h.y + 500), hole);
+    const pull = await probe();
+    await G(() => window.__derive.give('anchor'));
+    const anchored = await probe();
+    assert.ok(Math.abs(anchored.grav / pull.grav - 0.25) < 0.02, `anchor ratio ${(anchored.grav / pull.grav).toFixed(3)}`);
+    // take the anchor back: the victory step checks the refusal without it
+    await G(() => { const d = window.__derive; d.game.save.items.anchor = false; for (const it of d.game.entities.items) if (it.key === 'anchor') it.taken = false; d.game.persist(); const s = d.gen().spawn; d.teleport(s.x, s.y); d.freeze(false); });
+  });
+
   await step('portrait shows "Tourne ton iPhone" and pauses; landscape restores', async () => {
     await page.setViewportSize({ width: 342, height: 750 });
     await settle(600);
@@ -612,6 +670,36 @@ try {
     await p2.screenshot({ path: resolve(SHOTS, '30-title-after-rotate.png') });
     await ctx2.close();
     assert.notEqual(rotated, portrait, 'logo resized on rotation');
+    assert.deepEqual(errs, []);
+  });
+
+  await step('desktop 1280 × 720 with a keyboard: boots clean, Jouer, WASD thrust, Tab map, Échap pause', async () => {
+    const ctx4 = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+    const p4 = await ctx4.newPage();
+    const errs = [];
+    p4.on('pageerror', (e) => errs.push(e.message));
+    p4.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errs.push(m.text()); });
+    await p4.goto(`${url}/index.html?seed=777&mute`);
+    await p4.waitForSelector('button[data-act=play]', { timeout: 8000 });
+    const info = await p4.evaluate(() => window.__derive.info());
+    assert.equal(info.touch, false);
+    assert.equal(info.view.scale, 2, 'floor(720 / 250) = 2');
+    await p4.click('button[data-act=play]');
+    await p4.waitForFunction(() => window.__derive.state() === 'PLAYING');
+    assert.equal(await p4.evaluate(() => getComputedStyle(document.getElementById('controls')).display), 'none', 'no touch controls on desktop');
+    await p4.keyboard.down('KeyD');
+    await p4.waitForTimeout(500);
+    await p4.keyboard.up('KeyD');
+    assert.ok((await p4.evaluate(() => window.__derive.player().vx)) > 40, 'D thrusts east');
+    await p4.screenshot({ path: resolve(SHOTS, '31-desktop.png') });
+    await p4.keyboard.press('Tab');
+    await p4.waitForFunction(() => window.__derive.state() === 'MAP');
+    await p4.keyboard.press('Tab');
+    await p4.waitForFunction(() => window.__derive.state() === 'PLAYING');
+    await p4.keyboard.press('Escape');
+    await p4.waitForFunction(() => window.__derive.state() === 'PAUSED');
+    await p4.screenshot({ path: resolve(SHOTS, '32-desktop-pause.png') });
+    await ctx4.close();
     assert.deepEqual(errs, []);
   });
 

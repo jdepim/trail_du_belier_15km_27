@@ -89,8 +89,8 @@ game.explosion = (x, y, r, power, cause) => game.hazards.explode(x, y, r, power,
 game.tileBroken = (tx, ty, id) => {
   const def = TILES[id];
   FX.vx = 0; FX.vy = 0; FX.nx = 0; FX.ny = 0; FX.count = 5; FX.power = 1; FX.r = TILE / 2;
-  FX.material = def.sound || 'rock'; FX.color = def.colors[2];
-  game.particles.spawn('rock', tx * TILE + TILE / 2, ty * TILE + TILE / 2, FX);
+  FX.material = def.key; FX.color = def.colors[2];
+  game.particles.spawn('tile', tx * TILE + TILE / 2, ty * TILE + TILE / 2, FX);
   game.coach.onTileBroken(def.key);
 };
 
@@ -276,17 +276,16 @@ game.respawn = () => {
   game.banner('BALISE DE RAPPEL', "Retour à l'épave de l'Albatros");
 };
 
-/** Title "Jouer" / "Continuer". */
+/** Title "Jouer" / "Continuer" (the button press already unlocked the audio inside its gesture). */
 game.startGame = () => {
-  game.audio.unlock();
   const first = !game.lifeStarted;
   game.lifeStarted = true;
   game.setState('PLAYING');
   if (!first) return;
+  if (applyStartFlags(game)) return; // ?at / ?x&y: started elsewhere than the Albatros
   const fresh = game.save.stats.deaths === 0 && game.save.salvage === 0 && !game.save.items.keycard;
   if (fresh) game.banner("ÉPAVE DE L'ALBATROS", 'Rejoins le Module de retour Ulysse, tout au nord');
   else game.banner("ÉPAVE DE L'ALBATROS", 'Ton équipement t’attend');
-  applyStartFlags(game);
 };
 
 /**
@@ -555,7 +554,7 @@ function boot() {
   const canvas = document.getElementById('game');
   game.input = createInput();
   game.audio = createAudio();
-  game.particles = new Particles();
+  game.particles = new Particles(game);
   game.camera = new Camera(game);
   game.hud = new Hud(game);
   game.player = new Player(game);

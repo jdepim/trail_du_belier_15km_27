@@ -25,7 +25,7 @@ export const SAVE_VERSION = 1;
 export const ITEMS = {
   keycard: { name: "Carte d'accès", icon: 'item_keycard', desc: "La carte d'accès ouvre les portes de la station Orion." },
   explosives: { name: 'Charges explosives', icon: 'item_explosives', desc: 'Bouton Charge : elles brisent éboulis, petits astéroïdes et tourelles.' },
-  heatshield: { name: 'Bouclier thermique', icon: 'item_heatshield', desc: 'Le bouclier divise par dix la chaleur des soleils.' },
+  heatshield: { name: 'Bouclier thermique', icon: 'item_heatshield', desc: 'Le bouclier encaisse l’essentiel de la chaleur des soleils.' },
   anchor: { name: 'Ancre gravitationnelle', icon: 'item_anchor', desc: "L'ancre divise par quatre l'attraction des trous noirs." },
 };
 export const ITEM_KEYS = Object.keys(ITEMS);
@@ -49,13 +49,13 @@ export const UPGRADES = {
     name: 'Réservoir de carburant', icon: 'up_fuel', max: 3, costs: [15, 40, 90],
     desc: 'Capacité et recharge solaire du carburant.',
     apply(s, lv) { s.fuelMax = PLAYER.fuelMax * (1 + 0.25 * lv); s.rechargeRate = PLAYER.rechargeRate * (1 + 0.25 * lv); },
-    effect(lv) { return `${Math.round(PLAYER.fuelMax * (1 + 0.25 * lv))} u`; },
+    effect(lv) { return `Capacité ${Math.round(PLAYER.fuelMax * (1 + 0.25 * lv))} u`; },
   },
   thrust: {
     name: 'Propulseurs', icon: 'up_thrust', max: 4, costs: [25, 60, 120, 200],
     desc: 'Poussée et vitesse de croisière.',
     apply(s, lv) { s.thrustAccel = PLAYER.thrustAccel * (1 + 0.15 * lv); s.cruiseSpeed = PLAYER.cruiseSpeed * (1 + 0.12 * lv); },
-    effect(lv) { return lv ? `+${15 * lv} % poussée` : 'Poussée de série'; },
+    effect(lv) { return `Poussée ${100 + 15 * lv} %`; },
   },
   hull: {
     name: 'Blindage', icon: 'up_hull', max: 4, costs: [20, 50, 100, 170],

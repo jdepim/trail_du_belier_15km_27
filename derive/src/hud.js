@@ -3,7 +3,7 @@
 //   drawText(ctx, str, x, y, color, opts?) -> width   y = cap top; opts { align 'left'|'center'|'right',
 //        outline (colour) | shadow (true | colour | false), alpha, scale (integer) }. Outlined / shadowed
 //        labels are cached as small canvases (one drawImage per label, no per-frame string work).
-//   measureText(str) -> width in px (scale 1)
+//   measureText(str) -> width in px (scale 1); hasGlyphs(str) -> every character drawable
 //   new Hud(game)
 //     update(dt)                 fixed tick: timers, toasts, discovery cache, zone entries, warning chirps
 //     draw(ctx)                  whole HUD at internal resolution (reads game.view: w, h, camX, camY)
@@ -14,7 +14,7 @@
 //     zoneName(name)             place name at the top centre (also shown automatically on zone entry)
 //     reset()                    new life / world: clear messages
 // Layout (DESIGN §10): bars + charges + salvage top-left, zone / banner / warnings / tip / toasts in the
-// top-centre column, radar arrows on the screen edges; the top-right buttons and both bottom thumb
+// top-centre column, radar arrows (RADAR.maxArrows nearest places) on the screen edges; the top-right buttons and both bottom thumb
 // areas (HUD_LAYOUT) stay clear.
 import { ZONES, POIS, PLAYER } from './config.js';
 import { drawSprite } from './sprites.js';
@@ -42,7 +42,7 @@ const G = {
   4: '...#.|..##.|.#.#.|#..#.|#####|...#.|...#.', 5: '#####|#....|####.|....#|....#|#...#|.###.',
   6: '.###.|#....|#....|####.|#...#|#...#|.###.', 7: '#####|....#|...#.|..#..|.#...|.#...|.#...',
   8: '.###.|#...#|#...#|.###.|#...#|#...#|.###.', 9: '.###.|#...#|#...#|.####|....#|....#|.###.',
-  '.': '.|.|.|.|.|.|#', ',': '..|..|..|..|..|.#|#.', '!': '#|#|#|#|#|.|#', '?': '.###.|#...#|....#|...#.|..#..|.....|..#..',
+  '.': '.|.|.|.|.|.|#', ',': '..|..|..|..|##|.#|#.', '!': '#|#|#|#|#|.|#', '?': '.###.|#...#|....#|...#.|..#..|.....|..#..',
   ':': '.|.|#|.|.|#|.', ';': '..|..|.#|..|..|.#|#.', "'": '#|#|.|.|.|.|.', '’': '#|#|.|.|.|.|.', '"': '#.#|#.#|...|...|...|...|...',
   '-': '...|...|...|###|...|...|...', '+': '.....|..#..|..#..|#####|..#..|..#..|.....', '/': '....#|...#.|...#.|..#..|.#...|.#...|#....',
   '(': '.#|#.|#.|#.|#.|#.|.#', ')': '#.|.#|.#|.#|.#|.#|#.', '%': '##..#|##..#|...#.|..#..|.#...|#..##|#..##',
@@ -62,6 +62,7 @@ const MARKS = { acute: '..#|.#.', grave: '#..|.#.', circ: '.#.|#.#', diaer: '...
 const ACCENTS = {
   'É': ['E', 'acute'], 'È': ['E', 'grave'], 'Ê': ['E', 'circ'], 'Ë': ['E', 'diaer'], 'À': ['A', 'grave'], 'Â': ['A', 'circ'],
   'Ç': ['C', 'ced'], 'Ô': ['O', 'circ'], 'Î': ['I', 'circ'], 'Ï': ['I', 'diaer'], 'Ù': ['U', 'grave'], 'Û': ['U', 'circ'], 'Ü': ['U', 'diaer'],
+  'Ö': ['O', 'diaer'], 'Ä': ['A', 'diaer'],
 };
 
 const CELL_W = 7, CELL_H = 11; // 2 rows of accent space above, 2 below
@@ -95,6 +96,12 @@ function atlas(color) {
 
 function normalize(str) { return String(str).toUpperCase(); }
 
+/** True when every character of str (uppercased) has a glyph (spaces included). */
+export function hasGlyphs(str) {
+  for (const c of normalize(str)) if (c !== ' ' && !INDEX.has(c)) return false;
+  return true;
+}
+
 /** Width in pixels of a string in the bitmap font (scale 1). */
 export function measureText(str) {
   let w = 0;
@@ -118,7 +125,6 @@ function glyphPass(ctx, s, cx, y, col) {
 // (no string building per frame); a colour's map is dropped past LABEL_MAX entries.
 const LABELS = { outline: new Map(), shadow: new Map() };
 const LABEL_MAX = 200;
-let labelsBuilt = 0;
 
 function cachedLabel(kind, styleCol, color, str) {
   let byColor = LABELS[kind].get(styleCol);
@@ -144,12 +150,9 @@ function cachedLabel(kind, styleCol, color, str) {
   glyphPass(g, s, ox, oy, color);
   e = { canvas: c, w, ox, oy };
   byText.set(str, e);
-  labelsBuilt++;
   return e;
 }
 
-/** Number of label canvases built so far (tests / debug). */
-export function labelStats() { return { built: labelsBuilt }; }
 
 /** Draw text; returns its width (scaled). See the header for opts. */
 export function drawText(ctx, str, x, y, color = '#ffffff', opts = NO_OPTS) {
@@ -196,8 +199,9 @@ export function distLabel(px) {
  * Radar arrow position on the screen border (out.x, out.y, out.edge 0 top / 1 right / 2 bottom / 3 left)
  * for a direction (dx, dy) seen from the screen point (cx, cy), inside the inset rectangle
  * [x0, x1] × [y0, y1], then slid along its edge out of the reserved corners:
- * top edge x ∈ [topMin, topMax], bottom x ∈ [botMin, botMax], left y ∈ [leftMin, leftMax],
- * right y ∈ [rightMin, rightMax] (lim = { x0, y0, x1, y1, topMin, topMax, botMin, botMax, leftMin, leftMax, rightMin, rightMax }).
+ * top edge x ∈ [topMin, topMax] minus the message column ]topGap0, topGap1[ (pushed to its nearer side),
+ * bottom x ∈ [botMin, botMax], left y ∈ [leftMin, leftMax], right y ∈ [rightMin, rightMax]
+ * (lim = { x0, y0, x1, y1, topMin, topMax, topGap0, topGap1, botMin, botMax, leftMin, leftMax, rightMin, rightMax }).
  */
 export function edgePoint(cx, cy, dx, dy, lim, out) {
   let t = Infinity;
@@ -209,7 +213,11 @@ export function edgePoint(cx, cy, dx, dy, lim, out) {
   let x = cx + dx * t, y = cy + dy * t;
   const eps = 0.5;
   let edge;
-  if (y <= lim.y0 + eps) { edge = 0; x = Math.max(lim.topMin, Math.min(lim.topMax, x)); y = lim.y0; }
+  if (y <= lim.y0 + eps) {
+    edge = 0; y = lim.y0;
+    if (x > lim.topGap0 && x < lim.topGap1) x = x - lim.topGap0 < lim.topGap1 - x ? lim.topGap0 : lim.topGap1;
+    x = Math.max(lim.topMin, Math.min(lim.topMax, x));
+  }
   else if (y >= lim.y1 - eps) { edge = 2; x = Math.max(lim.botMin, Math.min(lim.botMax, x)); y = lim.y1; }
   else if (x >= lim.x1 - eps) { edge = 1; y = Math.max(lim.rightMin, Math.min(lim.rightMax, y)); x = lim.x1; }
   else { edge = 3; y = Math.max(lim.leftMin, Math.min(lim.leftMax, y)); x = lim.x0; }
@@ -250,8 +258,9 @@ export class Hud {
       salvage: new TextMemo((a, b) => (b > 0 ? `FERRAILLE ${a} (+${b})` : `FERRAILLE ${a}`)),
     };
     this._pt = { x: 0, y: 0, edge: 0 };
-    this._lim = { x0: 0, y0: 0, x1: 0, y1: 0, topMin: 0, topMax: 0, botMin: 0, botMax: 0, leftMin: 0, leftMax: 0, rightMin: 0, rightMax: 0 };
+    this._lim = { x0: 0, y0: 0, x1: 0, y1: 0, topMin: 0, topMax: 0, topGap0: 0, topGap1: 0, botMin: 0, botMax: 0, leftMin: 0, leftMax: 0, rightMin: 0, rightMax: 0 };
     this._placed = new Float32Array(POIS.length * 2);
+    this._dist = new Float32Array(POIS.length);
     this.blockBottom = 40; this.blockRight = 110;
   }
 
@@ -385,7 +394,7 @@ export class Hud {
     this._vignette(ctx, W, H, p);
     const bottom = this._resources(ctx, L, T, p, g);
     this.blockBottom = bottom; this.blockRight = L + 118;
-    if (!p.dead) this._radar(ctx, W, H, L, T, safe, p, g, view);
+    if (!p.dead) this._radar(ctx, W, H, L, T, safe, p, g, view, this._topHalf(W));
 
     // top-centre column: zone / banner, warnings, tip, toasts
     let y = T + 1;
@@ -400,7 +409,7 @@ export class Hud {
     const blink = Math.floor(this.clock * HL.warnBlink * 2) % 2 === 0;
     for (let i = 0; i < WARN.length; i++) {
       if (!this.warnOn[i]) continue;
-      if (blink || i === 1 || i === 4) drawText(ctx, WARN[i].text, W / 2, wy, blink ? WARN[i].color : '#ffffff', O_CENTER);
+      drawText(ctx, WARN[i].text, W / 2, wy, blink ? WARN[i].color : '#ffffff', O_CENTER);
       wy += 10;
     }
     let ty = Math.max(wy + 4, T + 46);
@@ -423,10 +432,21 @@ export class Hud {
     }
   }
 
+  /** Half width of the top-centre column this frame (zone name / banner / warnings), for the radar. */
+  _topHalf(W) {
+    let half = HL.topGapHalf;
+    if (this.bannerT > 0) {
+      const tw = measureText(this.bannerTitle) * 2 + (this.bannerIcon ? 22 : 0), sw = this.bannerSub ? measureText(this.bannerSub) : 0;
+      half = Math.max(half, Math.min(W - 16, Math.max(tw, sw) + 24) / 2 + 6);
+    } else if (this.zoneT > 0) half = Math.max(half, measureText(this.zoneText) + 8);
+    for (let i = 0; i < WARN.length; i++) if (this.warnOn[i]) half = Math.max(half, measureText(WARN[i].text) / 2 + 12);
+    return half;
+  }
+
   _vignette(ctx, W, H, p) {
-    const low = !p.dead && p.hull > 0 && p.hull <= p.stats.maxHull * 0.25;
+    const low = !p.dead && p.hull > 0 && p.hull <= p.stats.maxHull * HL.lowHull;
     const hurt = p.hurtT > 0 ? p.hurtT / 0.25 : 0;
-    const v = Math.max(hurt * 0.55, low ? 0.2 + 0.14 * Math.sin(this.clock * 6) : 0);
+    const v = Math.max(hurt * HL.hurtFlash, low ? 0.2 + 0.14 * Math.sin(this.clock * 6) : 0);
     if (v <= 0.01) return;
     ctx.fillStyle = '#c0182e';
     for (let i = 0; i < 6; i++) {
@@ -441,7 +461,7 @@ export class Hud {
   _resources(ctx, L, T, p, g) {
     const s = p.stats;
     const blinkLow = Math.floor(this.clock * 4) % 2 === 0;
-    const hullLow = p.hull <= s.maxHull * 0.25;
+    const hullLow = p.hull <= s.maxHull * HL.lowHull;
     let right = this._bar(ctx, L, T, 0, 'hud_hull', p.hull, s.maxHull, PLAYER.maxHull, hullLow && blinkLow ? BAR_HULL_HI : BAR_HULL, this.hullShown);
     right = Math.max(right, this._bar(ctx, L, T, 1, 'hud_o2', p.o2, s.o2Max, PLAYER.o2Max, p.o2Low && blinkLow ? BAR_O2_HI : BAR_O2));
     right = Math.max(right, this._bar(ctx, L, T, 2, 'hud_fuel', p.fuel, s.fuelMax, PLAYER.fuelMax, p.fuelEmpty && blinkLow ? BAR_FUEL_HI : BAR_FUEL));
@@ -522,43 +542,61 @@ export class Hud {
     return py + ph;
   }
 
-  /** Edge arrows toward discovered / in-range places (the Albatros always). */
-  _radar(ctx, W, H, L, T, safe, p, g, view) {
+  /**
+   * Edge arrows toward discovered / in-range places (the Albatros always): only the
+   * RADAR.maxArrows nearest ones (the map shows the rest), never inside the top-centre column
+   * while it holds text, never under the touch controls; an arrow that finds no free slot on
+   * its edge is dropped rather than drawn over another.
+   */
+  _radar(ctx, W, H, L, T, safe, p, g, view, topHalf) {
     const gen = g.gen;
     if (!gen || !gen.pois) return;
+    const pois = gen.pois;
     const inset = RADAR.inset;
     const lim = this._lim;
     const sr = Math.max(0, safe.r), sb = Math.max(0, safe.b);
     lim.x0 = L + inset; lim.x1 = W - sr - inset - 4; lim.y0 = T + inset; lim.y1 = H - sb - inset - 6;
-    lim.topMin = this.blockRight + 20; lim.topMax = W - HL.topRightW - 8;
-    lim.botMin = HL.bottomLeftW; lim.botMax = W - HL.bottomRightW;
-    lim.leftMin = this.blockBottom + 16; lim.leftMax = H - HL.bottomLeftH;
-    lim.rightMin = HL.topRightH + 14; lim.rightMax = H - HL.bottomRightH;
+    // the DOM touch controls are laid out in CSS px from the screen corners (input.js layout());
+    // nothing to keep clear without a touch screen
+    const k = g.input && !g.input.touchEnabled ? 0 : view.cssToInternal || 1;
+    const sl = Math.max(0, safe.l);
+    lim.topMin = this.blockRight + 20; lim.topMax = W - sr - HL.topRightCss.w * k - 8;
+    lim.topGap0 = W / 2 - topHalf; lim.topGap1 = W / 2 + topHalf;
+    lim.botMin = sl + HL.bottomLeftCss.w * k; lim.botMax = W - sr - HL.bottomRightCss.w * k;
+    lim.leftMin = this.blockBottom + 16; lim.leftMax = H - sb - HL.bottomLeftCss.h * k;
+    lim.rightMin = Math.max(0, safe.t) + HL.topRightCss.h * k + 14; lim.rightMax = H - sb - HL.bottomRightCss.h * k;
     const camX = view.camX || 0, camY = view.camY || 0;
     const pcx = p.x - camX, pcy = p.y - camY;
     const range = p.stats.radarRange;
     const sats = g.entities ? g.entities.satellites : null;
-    let placed = 0;
-    for (let i = 0; i < gen.pois.length; i++) {
-      const poi = gen.pois[i];
+    // candidates: known or in range, off screen, satellites not yet activated
+    const dist = this._dist;
+    let n = 0;
+    for (let i = 0; i < pois.length; i++) {
+      dist[i] = -1;
+      const poi = pois[i];
       if (!poi.radar) continue;
-      const dx = poi.x - p.x, dy = poi.y - p.y;
-      const d = Math.hypot(dx, dy);
-      const disc = poi.always || this.discovered[i];
-      if (!disc && d > range) continue;
+      const d = Math.hypot(poi.x - p.x, poi.y - p.y);
+      if (!poi.always && !this.discovered[i] && d > range) continue;
       if (poi.kind === 'satellite' && sats) { let done = false; for (const s of sats) if (s.id === poi.key && s.active) done = true; if (done) continue; }
-      // on screen: no arrow
       const sx = poi.x - camX, sy = poi.y - camY;
       if (sx > 10 && sy > 10 && sx < W - 10 && sy < H - 10) continue;
+      dist[i] = poi.always ? 0 : d; // the Albatros always takes a slot
+      n++;
+    }
+    let placed = 0;
+    for (let shown = 0; shown < RADAR.maxArrows && shown < n; shown++) {
+      let best = -1;
+      for (let i = 0; i < pois.length; i++) if (dist[i] >= 0 && (best < 0 || dist[i] < dist[best])) best = i;
+      if (best < 0) break;
+      dist[best] = -1;
+      const poi = pois[best];
+      const dx = poi.x - p.x, dy = poi.y - p.y;
+      const d = Math.hypot(dx, dy);
       const pt = edgePoint(pcx, pcy, dx / (d || 1), dy / (d || 1), lim, this._pt);
-      // keep labels apart: slide along the edge while overlapping an earlier arrow
-      for (let tries = 0; tries < 4; tries++) {
-        let hit = false;
-        for (let k = 0; k < placed; k++) if (Math.abs(this._placed[k * 2] - pt.x) < 22 && Math.abs(this._placed[k * 2 + 1] - pt.y) < 20) hit = true;
-        if (!hit) break;
-        if (pt.edge === 0 || pt.edge === 2) pt.x += pt.x < W / 2 ? 24 : -24; else pt.y += pt.y < H / 2 ? 22 : -22;
-      }
+      if (!this._freeSlot(pt, lim, placed)) continue;
       this._placed[placed * 2] = pt.x; this._placed[placed * 2 + 1] = pt.y; placed++;
+      const disc = poi.always || this.discovered[best];
       const ang = Math.atan2(dy, dx);
       const frame = ((Math.round(ang / (TAU / 16)) % 16) + 16) % 16;
       const pulse = poi.kind === 'blackhole' ? 0.75 + 0.25 * Math.sin(this.clock * 5) : 1;
@@ -577,6 +615,33 @@ export class Hud {
       else if (pt.edge === 3) drawText(ctx, label, ix - 5, iy + 7, col, O);
       else drawText(ctx, label, ix, pt.edge === 0 ? iy + 7 : iy - 13, col, O_CENTER);
     }
+  }
+
+  /**
+   * Slide pt along its edge (0, +s, −s, +2s, −2s…) to the first spot that overlaps no arrow
+   * already placed and stays inside the edge limits (outside the top column). False = no room.
+   */
+  _freeSlot(pt, lim, placed) {
+    const horiz = pt.edge === 0 || pt.edge === 2;
+    const step = horiz ? RADAR.slotW : RADAR.slotH;
+    const lo = pt.edge === 0 ? lim.topMin : pt.edge === 2 ? lim.botMin : pt.edge === 1 ? lim.rightMin : lim.leftMin;
+    const hi = pt.edge === 0 ? lim.topMax : pt.edge === 2 ? lim.botMax : pt.edge === 1 ? lim.rightMax : lim.leftMax;
+    const base = horiz ? pt.x : pt.y;
+    for (let t = 0; t < 9; t++) {
+      const off = ((t + 1) >> 1) * step * (t % 2 ? 1 : -1);
+      const v = base + off;
+      if (v < lo || v > hi) continue;
+      if (pt.edge === 0 && v > lim.topGap0 - step / 2 && v < lim.topGap1 + step / 2) continue; // label half width
+      const x = horiz ? v : pt.x, y = horiz ? pt.y : v;
+      let hit = false;
+      for (let k = 0; k < placed && !hit; k++) {
+        if (Math.abs(this._placed[k * 2] - x) < RADAR.slotW && Math.abs(this._placed[k * 2 + 1] - y) < RADAR.slotH) hit = true;
+      }
+      if (hit) continue;
+      pt.x = x; pt.y = y;
+      return true;
+    }
+    return false;
   }
 }
 

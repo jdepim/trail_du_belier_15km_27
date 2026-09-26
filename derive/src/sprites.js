@@ -15,14 +15,15 @@
 //   makeIcon(name, cssPx) -> data URL (PNG) of the sprite integer-upscaled for DOM buttons
 //   getTileTexture(id, variant) -> 8×8 canvas | null, tileVariant(id, tx, ty), tileVariantCount(id)
 //   getGlow(color, r) -> additive glow canvas (color: GLOW_COLORS key, r: GLOW_RADII value)
-//   backdrop  { layers: [canvas ×3], twinklers: [Float32Array ×3], nebula: { key: canvas }, staticNoise, vignette }
+//   backdrop  { layers: [canvas ×3], twinklers: [Float32Array ×3], starCols, nebula: { key: canvas }, staticNoise,
+//               vignette (black hole), heatVignette (orange edges) }
 //   celestial { sun: { key: [frames] }, corona: { key: canvas }, disk: { key: [frames] }, earth }
 // Sprite names (see tools/sprites.html): astro / astro_hurt / astro_dim (16 dirs), ast_<size>_<v>,
 //   pk_salvage (4 variants) pk_cache pk_o2 pk_fuel pk_repair, item_<key> (+ alias <key>), up_<key>
 //   (+ alias upg_<key>), brake boost charge action map pause, hull o2 fuel salvage, hud_* (HUD
 //   minis), poi_*, radar_arrow (16 dirs), crate (closed, open), terminal (unread ×2, read), refill,
 //   locker, workbench, hatch (locked, ready), turret_base, turret_gun (32 dirs), turret_dead,
-//   charge (2), bolt, door_h / door_v / door_open_h / door_open_v (3 parts), capsule_ship.
+//   charge_bomb (2: LED off / on), bolt, door_h / door_v / door_open_h / door_open_v (3 parts), capsule_ship.
 import { TILES, TILE_ID as T, TILE_COUNT } from './tiles.js';
 import { SUNS, BLACK_HOLES } from './config.js';
 import { mulberry32, hash2 } from './rng.js';
@@ -61,7 +62,6 @@ function toHex(r, g, b) {
   const h = (v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
   return '#' + h(r) + h(g) + h(b);
 }
-function shade(hex, k) { const [r, g, b] = rgb(hex); return toHex(r * k, g * k, b * k); }
 function mix(a, b, t) { const A = rgb(a), B = rgb(b); return toHex(A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t); }
 
 function mkCanvas(w, h) {
@@ -150,6 +150,21 @@ function periodicNoise(seed, period) {
     const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
     const a = lat(x0, y0), b = lat(x0 + 1, y0), c = lat(x0, y0 + 1), d = lat(x0 + 1, y0 + 1);
     return (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v;
+  };
+}
+
+/**
+ * periodicNoise sampled once on a res-per-cell grid, looked up by nearest sample (pixel art does not
+ * need the interpolation, and the lookup is far cheaper than hashing per pixel for animated frames).
+ */
+function noiseTable(seed, period, res) {
+  const n = periodicNoise(seed, period), N = period * res, t = new Float32Array(N * N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) t[j * N + i] = n(i / res, j / res);
+  return (u, v) => {
+    let i = Math.floor(u * res) % N, j = Math.floor(v * res) % N;
+    if (i < 0) i += N;
+    if (j < 0) j += N;
+    return t[j * N + i];
   };
 }
 
@@ -308,14 +323,14 @@ function texShuttle(seed, cols, v) {
   return p;
 }
 
-/** Periodic rock / regolith (period 32) with craterlets and pebbles. */
+/** Periodic asteroid rock (period 32) with craterlets and pebbles. */
 function texRock(seed, cols, v, opts = {}) {
   const P = 32, p = new Pix(P, P);
   const [c0, c1, c2, c3] = cols;
   const f = seamlessFbm(seed + v * 7, P, 4, 3);
   const r = mulberry32(seed * 3 + v);
   for (let y = 0; y < P; y++) for (let x = 0; x < P; x++) {
-    const t = f(x, y) + bayer(x, y) * (opts.dither ?? 0.16) + (opts.bias ?? 0);
+    const t = f(x, y) + bayer(x, y) * 0.16;
     p.set(x, y, t < 0.36 ? c0 : t < 0.47 ? c1 : t < 0.62 ? c2 : c3);
   }
   const craters = opts.craters ?? 3;
@@ -328,12 +343,53 @@ function texRock(seed, cols, v, opts = {}) {
       else if (d < cr + 0.3) p.set(px, py, x + y > 0 ? c3 : c1);
     }
   }
-  for (let k = 0; k < (opts.pebbles ?? 5); k++) {
+  for (let k = 0; k < 5; k++) {
     const x = Math.floor(r() * P), y = Math.floor(r() * P);
     p.set(x, y, c3); p.set((x + 1) % P, (y + 1) % P, c0);
   }
   return p;
 }
+
+/**
+ * Lunar regolith (period 64): broad low-contrast tone blobs shared by every variant (so neighbouring
+ * blocks join seamlessly), plus per-variant lit craterlets (bowl shaded on the side facing the light,
+ * rim lit on it) and pebbles. pal = 5 tones dark -> light (own palettes: the tile
+ * ramps are tuned for particles and the map, too contrasted for large surfaces).
+ */
+function texRegolith(seed, pal, v, opts = {}) {
+  const P = 64, p = new Pix(P, P);
+  const f = seamlessFbm(seed, P, 3, 3);
+  const r = mulberry32(seed * 3 + v);
+  for (let y = 0; y < P; y++) for (let x = 0; x < P; x++) {
+    const t = f(x, y) + bayer(x, y) * 0.1;
+    p.set(x, y, pal[t < 0.4 ? 1 : t < 0.58 ? 2 : 3]);
+  }
+  const lx = LIGHT_DIR.x, ly = LIGHT_DIR.y;
+  for (let k = 0; k < (opts.craters ?? 2); k++) {
+    // kept inside the block: the neighbouring block may be another variant
+    const cx = 5 + r() * (P - 10), cy = 5 + r() * (P - 10), cr = 1.4 + r() * (opts.craterMax ?? 2.6);
+    for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) {
+      const d = Math.hypot(dx, dy);
+      if (d > cr + 0.6) continue;
+      const toLight = d > 0 ? (dx * lx + dy * ly) / d : 0;
+      const px = Math.round(cx + dx), py = Math.round(cy + dy);
+      if (d < cr - 0.5) p.set(px, py, toLight > 0.25 ? pal[0] : toLight < -0.35 ? pal[3] : pal[1]);
+      else p.set(px, py, toLight > 0 ? pal[4] : pal[2]);
+    }
+  }
+  for (let k = 0; k < (opts.pebbles ?? 14); k++) {
+    const x = Math.floor(r() * (P - 1)), y = Math.floor(r() * (P - 1));
+    p.set(x, y, pal[4]); p.set(x + 1, y + 1, pal[0]);
+  }
+  return p;
+}
+
+const MOON_PAL = {
+  rock: ['#2f2d35', '#403d47', '#4c4954', '#5a5763', '#77747f'],
+  crater: ['#25232a', '#312f37', '#3b3942', '#47444e', '#5f5c67'],
+  dust: ['#46434d', '#57545f', '#65626d', '#74717c', '#908d98'],
+  floor: ['#312e37', '#3c3943', '#46434e', '#504d59', '#66636f'],
+};
 
 /** Cracked small-rock fringe (period 8): lighter, with dark fracture lines (reads as breakable). */
 function texFragile(seed, cols, v) {
@@ -519,11 +575,11 @@ function buildTileTextures() {
   tileSet(T.WINDOW, 8, 2, (v) => texWindow(C(T.WINDOW), v));
   tileSet(T.FLOOR, 16, 2, (v) => texFloor(C(T.FLOOR), v));
   tileSet(T.GRATE, 8, 2, (v) => texGrate(C(T.GRATE), v));
-  tileSet(T.MOON_ROCK, 32, 2, (v) => texRock(505, C(T.MOON_ROCK), v, { craters: 3 }));
-  tileSet(T.MOON_CRATER, 32, 2, (v) => texRock(606, C(T.MOON_CRATER), v, { craters: 5, craterMax: 2 }));
-  tileSet(T.MOON_DUST, 32, 2, (v) => texRock(707, C(T.MOON_DUST), v, { craters: 1, dither: 0.24, bias: 0.04 }));
-  tileSet(T.MOON_FLOOR, 32, 2, (v) => texRock(808, C(T.MOON_FLOOR), v, { craters: 0, pebbles: 9, bias: 0.05 }));
-  tileSet(T.RUBBLE, 16, 2, (v) => texRubble(909, C(T.RUBBLE), v));
+  tileSet(T.MOON_ROCK, 64, 3, (v) => texRegolith(505, MOON_PAL.rock, v, { craters: 6 }));
+  tileSet(T.MOON_CRATER, 64, 2, (v) => texRegolith(606, MOON_PAL.crater, v, { craters: 9, craterMax: 1.8 }));
+  tileSet(T.MOON_DUST, 64, 2, (v) => texRegolith(707, MOON_PAL.dust, v, { craters: 3, pebbles: 20 }));
+  tileSet(T.MOON_FLOOR, 64, 2, (v) => texRegolith(808, MOON_PAL.floor, v, { craters: 0, pebbles: 36 }));
+  tileSet(T.RUBBLE, 16, 2, (v) => texRubble(909, ['#2b2520', '#5e5347', '#8a7b69', '#b9a78e'], v));
   tileSet(T.ASTEROID, 32, 2, (v) => texRock(1010, C(T.ASTEROID), v, { craters: 4, craterMax: 2.4 }));
   tileSet(T.ASTEROID_SMALL, 8, 4, (v) => texFragile(1111, C(T.ASTEROID_SMALL), v));
   tileSet(T.ICE, 16, 3, (v) => texIce(1212, C(T.ICE), v));
@@ -894,16 +950,16 @@ function buildIcons() {
     '...wwww...',
   ]]);
   S('map', [[
-    'lllsssllls',
-    'lllsssllls',
-    'lrlsssllls',
-    'llrsssllrs',
-    'lrlssslrls',
-    'lllsrslrls',
-    'lllssrrlls',
-    'lllsssllls',
-    'lllsssllls',
-    'lllsssllls',
+    'lll...lll',
+    'lllsssrlr',
+    'lllssslrl',
+    'lllsssrlr',
+    'lllssrlll',
+    'lllsrslll',
+    'llrssslll',
+    'lrlssslll',
+    'lllssslll',
+    '...sss...',
   ]]);
   S('pause', [[
     '.www..www.',
@@ -1023,7 +1079,7 @@ function buildProps() {
     '..dg.ggd..',
     '...d..d...',
   ]]);
-  S('charge', [
+  S('charge_bomb', [
     ['.ddd.', 'dsssd', 'dsrsd', 'dsssd', '.ddd.'],
     ['.ddd.', 'dsssd', 'dsysd', 'dsssd', '.ddd.'],
   ]);
@@ -1110,10 +1166,10 @@ const NEBULA_COLS = {
 };
 
 function buildBackdrop() {
-  const Tt = BACKDROP.tile;
   backdrop.layers = [];
   backdrop.twinklers = [];
   BACKDROP.layers.forEach((L, li) => {
+    const Tt = L.tile;
     const r = mulberry32(0x57a4 + li * 71);
     const c = mkCanvas(Tt, Tt);
     const g = c.getContext('2d');
@@ -1143,7 +1199,7 @@ function buildBackdrop() {
     g.globalAlpha = 1;
     backdrop.layers.push(c);
     // twinklers: x, y, phase, speed, colour index
-    const n = li === 0 ? 0 : BACKDROP.twinklers;
+    const n = L.twinklers;
     const tw = new Float32Array(n * 5);
     for (let i = 0; i < n; i++) {
       tw[i * 5] = Math.floor(r() * Tt); tw[i * 5 + 1] = Math.floor(r() * Tt);
@@ -1152,21 +1208,24 @@ function buildBackdrop() {
     backdrop.twinklers.push(tw);
   });
   backdrop.starCols = STAR_COLS;
-  // nebula textures (dithered, seamless)
+  // nebula textures (seamless, soft: 8 alpha steps with a light ordered dither, colour ramps with density)
   const N = BACKDROP.nebulaTile;
   const fb = seamlessFbm(0x4eb1, N, 3, 4);
   const density = new Float32Array(N * N);
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) density[y * N + x] = Math.max(0, Math.min(1, (fb(x, y) - 0.42) * 2.6));
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const d = Math.max(0, Math.min(1, (fb(x, y) - 0.4) * 2.4));
+    density[y * N + x] = d * d * (3 - 2 * d);
+  }
   backdrop.nebula = {};
   for (const [key, [c0, c1]] of Object.entries(NEBULA_COLS)) {
     const p = new Pix(N, N);
     const A = rgb(c0), B = rgb(c1);
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const dv = density[y * N + x];
-      const q = Math.floor(dv * 4 + bayer(x, y) * 0.95);
+      const q = Math.floor(dv * 8 + bayer(x, y) * 0.9) / 8;
       if (q <= 0) continue;
-      const col = q >= 3 ? B : A;
-      p.set(x, y, col, [0, 60, 105, 150, 190][Math.min(4, q)]);
+      const col = [A[0] + (B[0] - A[0]) * q, A[1] + (B[1] - A[1]) * q, A[2] + (B[2] - A[2]) * q];
+      p.set(x, y, col, Math.round(q * BACKDROP.nebulaAlpha));
     }
     backdrop.nebula[key] = p.toCanvas();
   }
@@ -1179,12 +1238,15 @@ function buildBackdrop() {
     for (let k = 0; k < len; k++) st.set(x + k, y, rs() < 0.3 ? '#ffffff' : '#6fe6ff', 120 + Math.floor(rs() * 135));
   }
   backdrop.staticNoise = st.toCanvas();
-  const vg = new Pix(64, 36);
+  const vg = new Pix(64, 36), hv = new Pix(64, 36);
   for (let y = 0; y < 36; y++) for (let x = 0; x < 64; x++) {
     const d = Math.hypot((x + 0.5 - 32) / 32, (y + 0.5 - 18) / 18);
     const a = Math.max(0, Math.min(1, (d - 0.45) / 0.6));
     vg.set(x, y, [4, 0, 12], Math.round(a * a * 255));
+    const h = Math.max(0, Math.min(1, (d - 0.3) / 0.8));
+    hv.set(x, y, [255, 96, 24], Math.round(h * h * 255));
   }
+  backdrop.heatVignette = hv.toCanvas();
   backdrop.vignette = vg.toCanvas();
 }
 
@@ -1203,7 +1265,7 @@ function sunFrames(R, pal, seed) {
   const size = Math.ceil(R) * 2 + 2;
   const c = size / 2;
   const P = pal.map(rgb);
-  const n1 = periodicNoise(seed, 16), n2 = periodicNoise(seed + 9, 8);
+  const n1 = noiseTable(seed, 16, 8), n2 = noiseTable(seed + 9, 8, 16);
   // frame-independent: limb darkening + dither per pixel (-1 = outside the disk)
   const base = new Float32Array(size * size).fill(-1);
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
@@ -1211,7 +1273,7 @@ function sunFrames(R, pal, seed) {
     const d = Math.hypot(dx, dy);
     if (d > R) continue;
     const mu = Math.sqrt(1 - (d / R) * (d / R));
-    base[y * size + x] = 0.3 + 0.7 * Math.pow(mu, 0.55);
+    base[y * size + x] = 0.16 + 0.84 * Math.pow(mu, 0.75);
   }
   const frames = [];
   for (let f = 0; f < FX.sunFrames; f++) {
@@ -1256,7 +1318,7 @@ function diskFrames(horizon, diskR, seed) {
   const rin = horizon * 1.32;
   const P = DISK_PAL.map(rgb);
   const BLACK = rgb('#000000'), RING_HI = rgb('#fff6dc'), RING_LO = rgb('#ffd08a'), SHADOW = rgb('#0a0210');
-  const grain = periodicNoise(seed, 32);
+  const grain = noiseTable(seed, 32, 4);
   // frame-independent terms: kind (0 none, 1 horizon, 2 photon ring, 3 shadow gap, 4 disk), angle,
   // spiral phase, band speed k, brightness envelope, doppler term, fade threshold
   const kind = new Uint8Array(n), th0 = new Float32Array(n), spiral = new Float32Array(n);
@@ -1355,6 +1417,3 @@ export function loadSprites() {
   buildCelestial();
   loaded = true;
 }
-
-/** Colour helpers shared with the renderer's baked tile shading. */
-export const colorUtil = { shade, mix, rgb };

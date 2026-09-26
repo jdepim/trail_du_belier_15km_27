@@ -48,7 +48,7 @@ test('a flare hurts in the open and is blocked by a solid obstacle', () => {
   assert.ok(Math.abs(shielded.player.hull - (PLAYER.maxHull - SUNS.flare.damage * SUNS.flare.shieldMul)) < 1e-9, 'shield × 0.2');
 });
 
-test('heat: shield × 0.1, insulated interiors, SURCHAUFFE level', () => {
+test('heat: shield × SUNS.shieldMul, insulated interiors, SURCHAUFFE level', () => {
   const gen = cachedGen(1);
   const g = fakeGame({ gen });
   const s = gen.suns[0];

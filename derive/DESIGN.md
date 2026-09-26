@@ -134,7 +134,7 @@ zones mortelles ; **le graphe de progression est respecté** (§6.4).
 |---|---|---|---|
 | `keycard` | Carte d'accès | cockpit de Colibri | ouvre les **portes verrouillées** de la station Orion (bouton Action devant la porte) |
 | `explosives` | Charges explosives | armurerie d'Orion | bouton **Charge** : pose une charge qui dérive avec ta vitesse, explose après 2,5 s (rayon ~40 px) : détruit éboulis, petits astéroïdes, tourelles ; souffle qui te projette (et te blesse si tu es trop près) |
-| `heatshield` | Bouclier thermique | cœur de la galerie de Séléné | chaleur des soleils × 0,1, éruptions × 0,2 |
+| `heatshield` | Bouclier thermique | cœur de la galerie de Séléné | chaleur des soleils × 0,06 (amendé, §15), éruptions × 0,2 |
 | `anchor` | Ancre gravitationnelle | Observatoire Hélios | gravité des trous noirs × 0,25 (celle des soleils et de la lune n'est pas modifiée) ; **exigée pour embarquer** dans le module |
 
 Ramasser un équipement : bannière + fanfare + explication d'une ligne (« La carte d'accès ouvre les portes d'Orion »),
@@ -153,7 +153,7 @@ les débris. Aide visuelle : distorsion et poussières spiralées près des trou
 ### 6.2 Soleils
 - **Cœur** (r ~70 px) : contact = mort (« Carbonisé »).
 - **Chaleur** jusqu'au rayon `heatR` (~650 px) : dégâts de coque croissants en s'approchant (courbe raide, à régler),
-  × 0,1 avec le bouclier. Écran qui vire à l'orangé, grésillement, avertissement « SURCHAUFFE ».
+  × 0,06 avec le bouclier (amendé, §15). Écran qui vire à l'orangé, grésillement, avertissement « SURCHAUFFE ».
 - **Éruptions** : toutes les 12–20 s par soleil, télégraphiées (le soleil pulse 1,5 s), un anneau s'étend
   (~500 px/s) jusqu'à ~1,5 × `heatR` : ~25 dégâts si l'anneau te touche **sans obstacle solide** entre toi et le
   soleil (s'abriter derrière un astéroïde ou une coque protège). × 0,2 avec le bouclier.
@@ -360,4 +360,51 @@ ramassage, interactions) → `particles.update` → `camera.update` → `hud.upd
 - `derive/package.json` : scripts `test`, `test:e2e`, `serve` (aucune dépendance).
 
 ## 15. Amendements
-(à compléter par chaque étape : écarts au contrat, décisions de réglage, APIs ajoutées)
+Écarts au contrat, décisions de réglage et APIs ajoutées, par étape. Le détail (valeurs, raisons, mesures) est dans
+`NOTES.md` ; les valeurs font foi dans `src/config.js` et `src/render-config.js`.
+
+**Simulation**
+- Écoutille du module Ulysse à **336 px** du Maelström (et non ~380) : une attraction en 1/r² ne peut pas valoir la
+  poussée de base à 600 px et dépasser poussée max + frein à 380 px. À 336 px : 558 px/s² (139 avec l'ancre).
+- Chaleur : exposant 2, `heatMax` 840 hull/s à la surface du cœur ; les coques isolées (`ZONES[].sheltered`)
+  multiplient la chaleur par 0,01 (voir Intégration).
+- Le **dock** (dépôt, plein, charges) est géré par `entities.update`, pas par `main.js`.
+- Les objets-clés se prennent en **touchant** leur socle ; les consommables ne sont ramassés que s'il manque au moins
+  25 % de leur valeur (sinon ils attendent).
+- Les **tourelles** reviennent à chaque vie (non sauvegardées). `save.world.taken` liste les caches ponctuelles.
+- Astéroïdes de la ceinture sur orbites guidées (pas de gravité libre) ; les fragments d'astéroïdes brisés subissent
+  la vraie gravité.
+- Laser : un contact = 40 de coque, invulnérabilité et poussée hors du faisceau (pas de dégâts continus).
+- Orion mesure 64 × 40 tuiles. POI supplémentaire `tycho` (bouche de la galerie, absent du radar).
+- `settleDeath(save, run, cause)` prend la cause et remet `run.salvage` à zéro.
+- Ajouts : `gen.structures, gravitySources, caches, workbench, debrisFields, rubble`, champs `icon / radar / always /
+  label` des POI, `hazards.spawnAsteroid`, `ASTEROID_MODE`, `heatField()`, `entities.spawnSalvage / spawnPickup /
+  blastPush`, `meta.lifeSeedFor / recordVictory / fogCellRevealed / poiDiscovered / POI_NAMES`, `tools/solver.mjs`.
+
+**Présentation**
+- Les réglages de présentation vivent dans `src/render-config.js` (pas dans `config.js`).
+- `Renderer.render()` pilote aussi l'audio (boucles et ambiance selon l'état) : `main.js` n'appelle jamais `setLoop`
+  ni `setZone`. `game.view` porte en plus `cssToInternal, camX, camY`.
+- Pas de cinématique de victoire dans le renderer : celle de `ui.js` (canvas opaque, bouton Passer) est la seule.
+- `Particles.draw(ctx, camX, camY, pass)` (`'lit' | 'emissive' | 'all'`) ; `new Particles(game)` fait rebondir les
+  débris sur les tuiles. Sortie supplémentaire de `sprites.js` : `celestial, backdrop, getGlow, hasSprite…`.
+- Zones réservées du radar en px CSS (`HUD_LAYOUT.*Css`), recopiées de `input.js layout()` : les changer ensemble.
+
+**Coquille**
+- Minuteries de la coquille dans `SHELL` en tête de `main.js` (autosauvegarde 20 s, dérive du corps 1,8 s…).
+- `game.startGame()` ne débloque pas l'audio (les boutons le font dans leur geste) ; `debug.applyStartFlags` renvoie
+  `true` quand il téléporte ; `teleportTo('maelstrom' | 'charybde')` place à distance prudente.
+- Noms des régions ouvertes (Maelström, Charybde, Jumelles, Séléné, Ceinture, Tempête) annoncés par `main.js`, ceux
+  des intérieurs par le HUD.
+
+**Intégration**
+- **Bouclier thermique : chaleur × 0,06** (au lieu de × 0,1) et **coques isolées × 0,01** (au lieu de 0,05) :
+  l'approche d'Hélios à vitesse de croisière coûtait ~63 de coque et l'observatoire brûlait 3/s même avec le
+  bouclier. Critère §6.4 toujours tenu : 331 sans bouclier (≥ 300), 19 avec (≤ 40). Éruptions toujours × 0,2.
+- **Carburant à la croisière** : la poussée ne consomme que la variation de vitesse réellement appliquée. Pousser dans
+  le sens de la course à la vitesse de croisière laisse une petite flamme (`PLAYER.cruiseFlame`) et ne brûle rien.
+- Rendu : les corps célestes sont dessinés **sous** les entités et l'astronaute.
+- Radar : au plus `RADAR.maxArrows` (6) flèches, les plus proches (l'Albatros toujours compté).
+- Police bitmap : glyphes `Ö` `Ä`, virgule lisible, `hasGlyphs()` ; astuce `heatShield` (bouclier possédé).
+- Bouton contextuel 124 × 46 px CSS. Outils `tools/feel.mjs` (`npm run feel`) et `tools/tour.mjs` (`npm run tour`).
+- Tests e2e étendus (asphyxie, aimant, trou noir, bouclier / ancre, session clavier sur ordinateur).

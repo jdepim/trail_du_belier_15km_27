@@ -20,7 +20,9 @@ const R_VIEW = BOUNDARY.r + 160;               // world px shown around the cent
 const POPCOUNT = new Uint8Array(256);
 for (let i = 0; i < 256; i++) { let n = 0, v = i; while (v) { n += v & 1; v >>= 1; } POPCOUNT[i] = n; }
 /** Vertical label placement for places that sit close to another one (px, + = below). */
-const LABEL_DY = { maelstrom: -9, ulysse: 8, selene: -10, tycho: 8, twins: -12, helios: 9 };
+const LABEL_DY = { maelstrom: -9, charybde: -11, ulysse: 8, mistral: 9, selene: -10, tycho: 8, twins: -12, helios: 9 };
+/** Horizontal label gap (px) for places whose hull is wider than their icon on the map. */
+const LABEL_GAP = { albatros: 11, colibri: 10, orion: 12, mistral: 11 };
 const O = { outline: '#03050a' };
 const O_R = { outline: '#03050a', align: 'right' };
 const O_C = { outline: '#03050a', align: 'center' };
@@ -100,13 +102,15 @@ function buildFog(fog, count) {
     const on = (fog[i >> 3] & (1 << (i & 7))) !== 0;
     const o = i * 4;
     const cx = i % N, cy = (i / N) | 0;
-    d[o] = 6; d[o + 1] = 10; d[o + 2] = 22; d[o + 3] = on ? 0 : ((cx + cy) & 1 ? 250 : 236);
+    d[o] = 3; d[o + 1] = 5; d[o + 2] = 11; d[o + 3] = on ? 0 : ((cx + cy) & 1 ? 250 : 240);
     if (on && !beltKnown) { const dd = (cx + 0.5 - c0) ** 2 + (cy + 0.5 - c0) ** 2; if (dd > rin2 && dd < rout2) beltKnown = true; }
   }
   fogCanvas.getContext('2d').putImageData(fogImg, 0, 0);
   fogCount = count; fogRef = fog;
   exploredPct = Math.round(fogExplored(fog));
 }
+
+function known(fog, key) { return !!fog && poiDiscovered(fog, POI_BY_KEY[key]); }
 
 function revealedCount(fog) {
   let n = 0;
@@ -125,7 +129,7 @@ export function drawMap(ctx, game, w, h) {
   const clock = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
   const cx = L.x + L.size / 2, cy = L.y + L.size / 2, R = BOUNDARY.r * L.k;
   // panel frame
-  ctx.fillStyle = '#071226'; ctx.fillRect(L.x - 2, L.y - 2, L.size + 4, L.size + 4);
+  ctx.fillStyle = '#0c1f33'; ctx.fillRect(L.x - 2, L.y - 2, L.size + 4, L.size + 4);
   ctx.fillStyle = '#1f5a74';
   ctx.fillRect(L.x - 3, L.y - 3, L.size + 6, 1); ctx.fillRect(L.x - 3, L.y + L.size + 2, L.size + 6, 1);
   ctx.fillRect(L.x - 3, L.y - 3, 1, L.size + 6); ctx.fillRect(L.x + L.size + 2, L.y - 3, 1, L.size + 6);
@@ -156,9 +160,8 @@ export function drawMap(ctx, game, w, h) {
   ctx.globalAlpha = 1;
   // known hazards
   const hz = game.hazards;
-  const known = (key) => fog && poiDiscovered(fog, POI_BY_KEY[key]);
   if (hz) {
-    if (known('twins')) for (const s of hz.suns) {
+    if (known(fog, 'twins')) for (const s of hz.suns) {
       const a = worldToMap(L, s.x, s.y);
       ctx.globalAlpha = 0.25; ctx.fillStyle = '#ff7a20';
       ctx.beginPath(); ctx.arc(a.x, a.y, s.heatR * L.k, 0, TAU); ctx.fill();
@@ -166,7 +169,7 @@ export function drawMap(ctx, game, w, h) {
       ctx.beginPath(); ctx.arc(a.x, a.y, Math.max(2, s.coreR * L.k * 1.6), 0, TAU); ctx.fill();
     }
     for (const b of hz.blackHoles) {
-      if (!known(b.key)) continue;
+      if (!known(fog, b.key)) continue;
       const a = worldToMap(L, b.x, b.y);
       ctx.globalAlpha = 0.5; ctx.strokeStyle = '#b07aff';
       ctx.beginPath(); ctx.arc(a.x, a.y, Math.max(3, b.diskR * L.k * 1.5), 0, TAU); ctx.stroke();
@@ -192,19 +195,22 @@ export function drawMap(ctx, game, w, h) {
     const dy = LABEL_DY[poi.key] || 0;
     const right = a.x < cx + L.size * 0.1;
     const col = poi.kind === 'blackhole' ? '#d8b0ff' : poi.always ? '#bff4ff' : '#e8eef8';
+    const gap = LABEL_GAP[poi.key] || 7;
     if (dy) drawText(ctx, poi.name, a.x, a.y + dy - (dy < 0 ? 4 : 0), col, O_C);
-    else if (right) drawText(ctx, poi.name, a.x + 7, a.y - 3, col, O);
-    else drawText(ctx, poi.name, a.x - 7, a.y - 3, col, O_R);
+    else if (right) drawText(ctx, poi.name, a.x + gap, a.y - 3, col, O);
+    else drawText(ctx, poi.name, a.x - gap, a.y - 3, col, O_R);
   }
-  // the astronaut
+  // the astronaut: heading tick + arrow, and a ring pulsing outward so it is found at a glance
   if (p) {
     const a = worldToMap(L, p.x, p.y);
-    if (Math.floor(clock * MAP_VIEW.blink * 2) % 2 === 0 || p.dead) {
-      ctx.fillStyle = '#ffffff';
-      const c = Math.cos(p.angle), s = Math.sin(p.angle);
-      for (let d = 4; d < 9; d++) ctx.fillRect(Math.round(a.x + c * d), Math.round(a.y + s * d), 1, 1);
-      drawSprite(ctx, 'radar_arrow', p.dir16, a.x, a.y);
-    }
+    const ph = (clock * MAP_VIEW.pulse) % 1;
+    ctx.globalAlpha = 1 - ph; ctx.strokeStyle = '#bff4ff'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(Math.round(a.x) + 0.5, Math.round(a.y) + 0.5, 4 + ph * 10, 0, TAU); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#ffffff';
+    const c = Math.cos(p.angle), s = Math.sin(p.angle);
+    for (let d = 4; d < 9; d++) ctx.fillRect(Math.round(a.x + c * d), Math.round(a.y + s * d), 1, 1);
+    drawSprite(ctx, 'radar_arrow', p.dir16, a.x, a.y);
   }
   // legend
   let y = L.y + 2;
@@ -229,14 +235,12 @@ export function drawMap(ctx, game, w, h) {
   }
   y += 4;
   // key
-  const keyRow = (icon, label, col) => {
-    if (y > L.y + L.size - 8) return;
-    drawSprite(ctx, icon, 0, x + 6, y + 3);
-    drawText(ctx, label, x + 16, y, col, O);
+  if (y <= L.y + L.size - 8) {
+    drawSprite(ctx, 'poi_home', 0, x + 6, y + 3);
+    drawText(ctx, 'ÉPAVE : DÉPÔT ET ÉTABLI', x + 16, y, '#bff4ff', O);
     y += 12;
-  };
-  keyRow('poi_home', 'ÉPAVE : DÉPÔT ET ÉTABLI', '#bff4ff');
-  if (measureText('TEMPÊTE IONIQUE') + 16 < L.legendW) {
+  }
+  if (y <= L.y + L.size - 8 && measureText('TEMPÊTE IONIQUE') + 16 < L.legendW) {
     ctx.globalAlpha = 0.8; ctx.fillStyle = '#5fe8d0'; ctx.fillRect(x + 2, y + 3, 8, 1); ctx.globalAlpha = 1;
     drawText(ctx, 'TEMPÊTE IONIQUE', x + 16, y, '#5fe8d0', O);
   }

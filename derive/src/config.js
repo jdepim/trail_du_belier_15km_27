@@ -86,6 +86,7 @@ export const PLAYER = {
   hardMaxSpeed: 420,      // absolute cap (gravity / boost / explosions)
   turnRate: 12,           // rad/s toward the thrust direction
   thrustMin: 0.05,        // stick norm below this = no thrust
+  cruiseFlame: 0.25,      // throttle shown (flame, sound) while the cruise rule absorbs the thrust
   assistDrag: 0.35,       // 1/s damping with Assistance inertielle, no stick, no brake
   brakeDecel: 260,        // px/s² opposed to the velocity
   boostImpulse: 170,      // px/s added in the stick (or facing) direction
@@ -137,8 +138,8 @@ export const SUNS = {
   influence: 1000,
   heatMax: 840,
   heatExp: 2,
-  shieldMul: 0.1,
-  shelteredMul: 0.05,
+  shieldMul: 0.06,        // DESIGN target × 0.1: × 0.06 keeps a cruise-speed shielded approach to Hélios near 40 hull
+  shelteredMul: 0.01,
   rechargeRMul: 1.15,     // fuel recharge × PLAYER.sunRechargeMul within this × heatR
   flare: {
     intervalMin: 12, intervalMax: 20,

@@ -1,0 +1,64 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>icon</title></head><body style="margin:0;background:#000">
+<canvas id="c"></canvas>
+<script type="module">
+// App icon: the astronaut drifting in front of the Maelström, a ~32 px pixel-art scene (the canvas
+// grows or shrinks by a few px so it upscales by a whole factor to N), for tools/make-icons.mjs:
+// window.renderIcon(N, maskable) -> PNG data URL (maskable: subject pulled toward the centre).
+import { loadSprites, getSprite, backdrop } from '../src/sprites.js';
+loadSprites();
+const S = 32; // scene size
+const DISK = ['#1c0632', '#3e0e5e', '#7a1c7c', '#c03c5e', '#ee7a2c', '#ffc454', '#fff2c8'];
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+
+function art(B, maskable) {
+  const c = document.createElement('canvas'); c.width = B; c.height = B;
+  const g = c.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.fillStyle = '#04030b'; g.fillRect(0, 0, B, B);
+  g.drawImage(backdrop.layers[1], 37, 91, B, B, 0, 0, B, B);
+  g.drawImage(backdrop.layers[2], 211, 402, B, B, 0, 0, B, B);
+  const o = Math.floor((B - S) / 2);
+  for (const [x, y, col] of [[3, 4, '#ffffff'], [9, 1, '#9fb4d8'], [27, 27, '#ffeccc'], [16, 29, '#9fb4d8'], [30, 22, '#ffffff'], [2, 12, '#9fb4d8'], [22, 30, '#ffffff']]) {
+    g.fillStyle = col; g.fillRect(o + x, o + y, 1, 1);
+  }
+  // black hole: horizon, photon ring, two-arm accretion disk with a dithered fade
+  const cx = o + (maskable ? 19.5 : 21), cy = o + (maskable ? 12.5 : 11), hz = 4.2, ring = 5.3, rin = 6.2, rout = 11.8;
+  for (let y = 0; y < B; y++) for (let x = 0; x < B; x++) {
+    const dx = x + 0.5 - cx, dy = y + 0.5 - cy, r = Math.hypot(dx, dy);
+    const b = (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
+    let col = null;
+    if (r < hz) col = '#000000';
+    else if (r < ring) col = dx + dy < 0 ? '#fff6dc' : '#ffd08a';
+    else if (r < rin) col = '#0a0210';
+    else if (r < rout) {
+      const t = (r - rin) / (rout - rin);
+      if (t > 0.7 && (t - 0.7) / 0.3 > b) continue;
+      const arm = 0.5 + 0.5 * Math.cos(2 * Math.atan2(dy, dx) + 5 * Math.log(r / rin));
+      const v = Math.pow(1 - t, 0.9) * (0.45 + 0.55 * arm) - (dx + dy) * 0.006;
+      col = DISK[Math.max(0, Math.min(6, Math.floor(v * 7.4 + b * 0.7)))];
+    }
+    if (col) { g.fillStyle = col; g.fillRect(x, y, 1, 1); }
+  }
+  // astronaut heading north-east, away from the hole's pull, a flame trail behind (south-west)
+  const s = getSprite('astro');
+  const dir = 14;
+  const ax = o + (maskable ? 6 : 3), ay = o + (maskable ? 12 : 14);
+  const flame = ['#fff2a0', '#ffc040', '#ff7a20', '#c83a10'];
+  for (let k = 0; k < 4; k++) { g.fillStyle = flame[k]; g.fillRect(ax + 4 - k, ay + 11 + k, 1, 1); g.fillRect(ax + 2 - k, ay + 9 + k, 1, 1); }
+  g.drawImage(s.canvas, dir * s.w, 0, s.w, s.h, ax, ay, s.w, s.h);
+  return c;
+}
+
+window.renderIcon = (N, maskable = false) => {
+  const c = document.getElementById('c');
+  c.width = N; c.height = N;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#04030b'; ctx.fillRect(0, 0, N, N);
+  const k = Math.max(1, Math.round(N / S)), B = Math.ceil(N / k), off = Math.floor((N - B * k) / 2);
+  ctx.drawImage(art(B, maskable), 0, 0, B, B, off, off, B * k, B * k);
+  return c.toDataURL('image/png');
+};
+document.title = 'ready';
+</script></body></html>

@@ -4,15 +4,16 @@
 //     ?debug (G = god mode, R = reveal the map)  ?god  ?seed=<n|text>  ?at=<POI key or record id>
 //     ?x=&y= (px relative to the sector centre)  ?items=all | keycard,explosives,…  ?salvage=<carried>
 //     ?bank=<deposited>  ?reveal (whole map)  ?autostart  ?mute  ?nosw (no service worker)
-//   applyStartFlags(game)   ?at / ?x&y / ?salvage, applied when "Jouer" starts the first life
+//   applyStartFlags(game)   ?at / ?x&y / ?salvage, applied when "Jouer" starts the first life (true = teleported)
 //   installDebug(game)      window.__derive = {
 //     game, errors, state(), start(), pause(), resume(), freeze(b), step(nTicks),
 //     player(), setPlayer(fields), teleport(x, y) (absolute px), teleportTo(target) (POI key, item key,
-//     'dock' | 'workbench' | 'capsule' | 'rubble', or a record id such as 'orion:door0' / 'sat3'),
+//     'dock' | 'workbench' | 'capsule' | 'rubble', or a record id such as 'orion:door0' / 'sat3';
+//     a black hole puts you at a safe stand-off toward the centre),
 //     spotNear(x, y, dirX, dirY), give(item), setSalvage(n), setBank(n), hazards(), entities(),
 //     save(), gen(), world: { get(tx, ty) }, ui(), info(), die(cause), input: { set, clear, tap, layout, state }
 //   }
-import { FIXED_DT, TILE, CENTER, POI_BY_KEY } from './config.js';
+import { FIXED_DT, TILE, CENTER, POI_BY_KEY, PLAYER } from './config.js';
 import { TILES, SOLID } from './tiles.js';
 import { normalizeSeed } from './rng.js';
 import { ITEM_KEYS, fogReveal } from './meta.js';
@@ -96,17 +97,26 @@ function targetOf(game, key) {
     const s = struct(r.id);
     return list === e.doors ? out(r.x, r.y, s.cx, s.cy) : { x: r.x, y: r.y, dx: 0, dy: 0 };
   }
+  // a black hole: stand off toward the sector centre where its pull is half the base thrust
+  const hole = g.blackHoles.find((b) => b.key === key);
+  if (hole) {
+    const d = Math.sqrt(hole.mu / (0.5 * PLAYER.thrustAccel));
+    const ux = CENTER - hole.x, uy = CENTER - hole.y, m = Math.hypot(ux, uy) || 1;
+    return { x: hole.x + (ux / m) * d, y: hole.y + (uy / m) * d, dx: 0, dy: 0 };
+  }
   const poi = g.pois.find((p) => p.key === key) || POI_BY_KEY[key];
   if (poi) return { x: poi.x, y: poi.y, dx: 0, dy: 0 };
   return null;
 }
 
-/** ?at / ?x&y / ?salvage: applied when the first life of the session starts. */
+/** ?at / ?x&y / ?salvage: applied when the first life of the session starts. True = teleported. */
 export function applyStartFlags(game) {
   const f = game.flags, api = window.__derive;
-  if (f.at) api.teleportTo(f.at);
-  else if (f.x !== null || f.y !== null) api.teleport(CENTER + (f.x || 0), CENTER + (f.y || 0));
+  let moved = false;
+  if (f.at) moved = !!api.teleportTo(f.at);
+  else if (f.x !== null || f.y !== null) { api.teleport(CENTER + (f.x || 0), CENTER + (f.y || 0)); moved = true; }
   if (f.salvage !== null) game.run.salvage = f.salvage;
+  return moved;
 }
 
 export function installDebug(game) {

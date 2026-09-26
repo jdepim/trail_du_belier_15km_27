@@ -50,6 +50,24 @@ test('cruise rule: thrust alone never exceeds the cruise speed, but can brake / 
   assert.ok(p.vx < before - 20);
 });
 
+test('holding the stick at cruise keeps a pilot flame but burns no fuel (the tank recharges)', () => {
+  const g = open();
+  const p = g.player;
+  p.reset(px(10), px(60));
+  p.vx = PLAYER.cruiseSpeed;
+  p.fuel = 50;
+  g.input.stick(1, 0);
+  tick(g, 60 * 3, DT, { only: 'player' });
+  near(p.speed, PLAYER.cruiseSpeed, 1e-6, 'cruise kept');
+  assert.ok(p.fuel > 50, `solar recharge while cruising (${p.fuel})`);
+  near(p.thrust, PLAYER.cruiseFlame, 1e-9, 'pilot flame');
+  // steering at cruise pays for the turn
+  g.input.stick(0, 1);
+  const f0 = p.fuel;
+  tick(g, 20, DT, { only: 'player' });
+  assert.ok(p.fuel < f0, 'turning burns fuel');
+});
+
 test('hard max speed caps everything', () => {
   const g = open();
   g.player.impulse(1000, 0);

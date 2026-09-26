@@ -44,7 +44,7 @@ const BUTTON_DEFS = [
   { action: 'pause', label: 'Pause', icon: 'pause', size: 'small' },
 ];
 const SMALL_BTN = 40;          // CSS px, top-right square buttons
-const CTX_W = 108, CTX_H = 46; // CSS px, contextual Action pill
+const CTX_W = 124, CTX_H = 46; // CSS px, contextual Action pill
 
 function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
 
@@ -367,7 +367,7 @@ export class Input {
       Object.assign(b.el.style, { width: b.d + 'px', height: b.d + 'px', left: (b.x - b.d / 2) + 'px', top: (b.y - b.d / 2) + 'px' });
     }
     const c = this.ctxBtn;
-    c.x = R - 42 - 84 - 30; c.y = B - 34 - 78;
+    c.x = R - 42 - 84 - 38; c.y = B - 34 - 78;
     Object.assign(c.el.style, { width: CTX_W + 'px', height: CTX_H + 'px', left: (c.x - CTX_W / 2) + 'px', top: (c.y - CTX_H / 2) + 'px' });
     this.ghostPos = { x: Math.max(s.l, 12) + 96, y: B - 86 };
     this._renderStick();

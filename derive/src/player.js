@@ -172,11 +172,17 @@ export class Player {
       let nvx = this.vx + ux * a * dt, nvy = this.vy + uy * a * dt;
       const s1 = Math.hypot(nvx, nvy);
       const lim = Math.max(st.cruiseSpeed, s0);
-      if (s1 > lim) { nvx *= lim / s1; nvy *= lim / s1; }
+      // fuel pays for the velocity change actually applied: holding the stick along the motion
+      // at cruise speed only keeps a pilot flame (no burn, the solar recharge keeps running)
+      let eff = 1;
+      if (s1 > lim) {
+        nvx *= lim / s1; nvy *= lim / s1;
+        eff = Math.min(1, Math.hypot(nvx - this.vx, nvy - this.vy) / (a * dt));
+      }
       this.vx = nvx; this.vy = nvy;
-      this.fuel -= PLAYER.fuelThrust * m * dt;
-      this.thrust = m; this.thrustX = ux; this.thrustY = uy;
-      burning = true;
+      this.fuel -= PLAYER.fuelThrust * m * eff * dt;
+      this.thrust = m * Math.max(eff, PLAYER.cruiseFlame); this.thrustX = ux; this.thrustY = uy;
+      burning = eff > PLAYER.cruiseFlame;
       this._exhaustAcc += m * dt * 40;
       if (this._exhaustAcc >= 1) {
         this._exhaustAcc -= 1;

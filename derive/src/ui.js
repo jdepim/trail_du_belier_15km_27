@@ -36,6 +36,13 @@ function el(tag, cls, text) {
 }
 
 const fmtN = (n) => Math.round(n || 0).toLocaleString('fr-FR');
+/** Upgrade step text: the next level drops the leading words it shares ("Coque 100 → 125"). */
+function effectStep(cur, next) {
+  const a = cur.split(' '), b = next.split(' ');
+  let i = 0;
+  while (i < a.length - 1 && i < b.length - 1 && a[i] === b[i]) i++;
+  return `${cur} → ${b.slice(i).join(' ')}`;
+}
 const metres = (px) => `${fmtN((px || 0) / 8)} m`;
 function fmtTime(s) {
   s = Math.max(0, Math.round(s || 0));
@@ -624,7 +631,7 @@ export class UI {
         buy.disabled = true;
         buy.appendChild(el('span', 'b1', 'MAX'));
       } else {
-        fx.textContent = `${u.effect(lv)} → ${u.effect(lv + 1)}`;
+        fx.textContent = effectStep(u.effect(lv), u.effect(lv + 1));
         const afford = game.save.salvage >= cost;
         buy.disabled = !afford;
         const b1 = el('span', 'b1');

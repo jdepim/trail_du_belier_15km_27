@@ -8,7 +8,9 @@
     "test": "node --test tests/unit/*.test.mjs",
     "test:e2e": "node tests/e2e/smoke.mjs",
     "serve": "node tests/e2e/server.mjs 8080",
-    "solver": "node tools/solver.mjs"
+    "solver": "node tools/solver.mjs",
+    "feel": "node tools/feel.mjs",
+    "tour": "node tools/tour.mjs"
   },
   "engines": {
     "node": ">=20"

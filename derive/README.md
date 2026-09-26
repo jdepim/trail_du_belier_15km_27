@@ -81,7 +81,7 @@ recharger la page te ramène à l'Albatros, sans compter de mort.
 |---|---|---|
 | Carte d'accès | cockpit de la navette Colibri | les portes de la station Orion |
 | Charges explosives | armurerie d'Orion | bouton Charge : éboulis, petits astéroïdes, tourelles (la galerie de la lune Séléné) |
-| Bouclier thermique | cœur de la galerie de Séléné | chaleur des soleils ÷ 10 (l'observatoire Hélios) |
+| Bouclier thermique | cœur de la galerie de Séléné | chaleur des soleils fortement réduite, sans l'annuler (l'observatoire Hélios) |
 | Ancre gravitationnelle | observatoire Hélios | attraction des trous noirs ÷ 4, **indispensable pour embarquer** |
 
 ### Améliorations (Établi)
@@ -94,6 +94,8 @@ rendent les sorties bien plus confortables.
 
 - Premières sorties : ramasse les débris autour de l'Albatros, reviens au dock, puis achète le **Réservoir d'O2** ou
   l'**Aimant**.
+- Pousser dans le sens de ta course une fois à la vitesse de croisière ne coûte rien : seuls les changements de
+  vitesse brûlent du carburant.
 - Garde un œil sur l'oxygène : le retour prend autant de temps que l'aller. Le **Frein** évite les chocs à grande
   vitesse, qui percent la coque.
 - Active les **satellites** : ils révèlent une grande partie de la carte et rapportent de la ferraille.
@@ -122,7 +124,7 @@ Paramètres d'URL utiles pour le développement :
 | `?debug` | touches G (mode dieu) et R (révèle la carte), pas de service worker |
 | `?god` | invulnérable (sauf la Balise de rappel) |
 | `?seed=123` | graine de la sauvegarde (remplissage du secteur) |
-| `?at=orion` | démarre près d'un lieu ou d'un élément (`colibri`, `selene`, `helios`, `capsule`, `rubble`, `orion:door0`, `sat3`…) |
+| `?at=orion` | démarre près d'un lieu ou d'un élément (`colibri`, `selene`, `helios`, `capsule`, `rubble`, `orion:door0`, `sat3`… ; `maelstrom` et `charybde` : à distance prudente du trou noir) |
 | `?x=1500&y=-900` | démarre à une position (px, relative au centre du secteur) |
 | `?items=all` ou `?items=keycard,explosives` | donne des équipements |
 | `?salvage=40` / `?bank=500` | ferraille transportée / déposée |
@@ -135,13 +137,19 @@ Paramètres d'URL utiles pour le développement :
 npm test               # tests unitaires de la simulation (node --test)
 npm run test:e2e       # parcours complet dans Chromium, profil « iPhone 13 paysage » tactile
 npm run solver         # preuve de la progression (quels équipements ouvrent quels lieux)
+npm run feel           # chiffres de pilotage : croisière, frein, dérive, ceinture, approche d'Hélios
+npm run tour -- /tmp/tour   # captures de chaque lieu dans le vrai jeu (voir plus bas)
 ```
 
 Les tests de bout en bout utilisent **Playwright installé globalement**, résolu par `npm root -g`, avec son
 Chromium. Ils ne téléchargent rien. Ils touchent l'écran pour de vrai (joystick et boutons), ramassent et déposent
-de la ferraille, achètent à l'Établi, meurent dans un soleil, ouvrent une porte d'Orion, font sauter l'éboulis,
-lisent un journal, rentrent sur Terre et rechargent la page. Les captures d'écran vont dans `tests/e2e/screenshots/`,
-ignoré par git.
+de la ferraille, achètent à l'Établi, meurent dans un soleil, par asphyxie et dans le Maelström, vérifient le
+bouclier thermique et l'ancre, ouvrent une porte d'Orion, font sauter l'éboulis, lisent un journal, rentrent sur
+Terre, rechargent la page et jouent au clavier sur un écran d'ordinateur. Les captures d'écran vont dans
+`tests/e2e/screenshots/`, ignoré par git.
+
+`npm run tour -- /tmp/tour` fait le tour du secteur dans le vrai jeu (profil iPhone 13 paysage) et enregistre une
+capture par lieu, plus la carte, la pause et l'Établi.
 
 ## Structure
 
@@ -169,7 +177,7 @@ derive/
 │   └── debug.js            paramètres d'URL et poignée de test window.__derive
 ├── tests/unit/             tests unitaires
 ├── tests/e2e/              test de bout en bout + petit serveur statique
-└── tools/                  solveur de progression, planche de sprites, captures
+└── tools/                  solveur de progression, planche de sprites, captures, tour visuel
 ```
 
 ## Limites connues

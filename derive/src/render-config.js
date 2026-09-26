@@ -2,22 +2,21 @@
 // this file only holds values that change how the game looks and sounds, never how it plays.
 //
 // Exports: LIGHT_DIR, BACKDROP, NEBULA_REGIONS, DARK, FX, PARTICLES, HUD_LAYOUT, RADAR, MAP_VIEW,
-//          VICTORY_CINE, AUDIO_MIX
+//          AUDIO_MIX
 
 /** Default "distant sun" light direction for baked tile shading (unit vector, points toward the light). */
 export const LIGHT_DIR = { x: -0.62, y: -0.78 };
 
 export const BACKDROP = {
-  tile: 512,                       // star layer tile size (px, repeated)
-  layers: [                        // far -> near
-    { parallax: 0.04, stars: 640, bright: 0.45 },
-    { parallax: 0.12, stars: 260, bright: 0.7 },
-    { parallax: 0.3, stars: 90, bright: 1 },
+  layers: [                        // far -> near; incommensurate tile sizes hide the repetition
+    { parallax: 0.04, tile: 512, stars: 640, bright: 0.45, twinklers: 0 },
+    { parallax: 0.12, tile: 640, stars: 400, bright: 0.7, twinklers: 60 },
+    { parallax: 0.3, tile: 896, stars: 270, bright: 1, twinklers: 120 },
   ],
-  twinklers: 40,                   // twinkling stars per mid / near tile
   nebulaTile: 256,                 // nebula texture size (drawn ×2)
   nebulaParallax: 0.07,
-  nebulaBase: 0.55,                // alpha of the neutral nebula far from every region
+  nebulaAlpha: 150,                // alpha of the densest nebula pixels (0..255)
+  nebulaBase: 0.9,                 // alpha of the neutral nebula far from every region
   titleDrift: 14,                  // px/s camera drift on the title screen
 };
 
@@ -34,6 +33,7 @@ export const NEBULA_REGIONS = [
 
 export const DARK = {
   base: 0.82,                      // darkness alpha of an unlit interior cell
+  zoneBase: { tycho: 0.62 },       // per-zone override (the gallery floor is dark rock already)
   lampRange: 15,                   // headlamp reach (tiles)
   lampHalfAngle: 0.62,             // rad, full-strength cone half angle
   lampSoft: 0.45,                  // rad of soft cone edge
@@ -45,13 +45,14 @@ export const DARK = {
 };
 
 export const FX = {
-  heatTint: 0.34,                  // max orange overlay alpha at heatLevel 1
-  stormStatic: 0.5,                // max cyan static alpha at stormIntensity 1
+  heatTint: 0.12,                  // max flat orange overlay alpha at heatLevel 1
+  heatEdge: 0.55,                  // max alpha of the orange edge glow at heatLevel 1
+  stormStatic: 0.4,                // max cyan static alpha at stormIntensity 1
   bhVignette: 0.72,                // max vignette alpha at bhProximity 1
-  hurtVignette: 0.45,
   sunFrames: 8, sunFps: 6,
   diskFrames: 16, diskFps: 10,
-  bhMotes: 44,
+  bhMotes: 44,                     // bright motes inside the accretion disk area
+  bhDust: 700, bhDustR: 900,       // faint dust over the pull radius (scaled by diskR / 130)
   flareRingWidth: 4,
   heatRingAlpha: 0.16,             // dashed ring drawn at heatR
   chargeRingFuse: 1.6,             // s of fuse left when the blast radius ring appears
@@ -71,10 +72,15 @@ export const HUD_LAYOUT = {
   zoneLife: 3,
   tipLife: 7,
   warnBlink: 2.6,                  // Hz
-  // internal px kept clear for the DOM controls (touch): top-right buttons, bottom thumbs
-  topRightW: 96, topRightH: 38,
-  bottomRightW: 170, bottomRightH: 128,
-  bottomLeftW: 130, bottomLeftH: 100,
+  // CSS px kept clear of radar arrows for the DOM touch controls (input.js layout(): Carte / Pause top-right;
+  // Boost, Frein, Charge and the Action pill bottom-right; the stick's resting place bottom-left),
+  // converted with game.view.cssToInternal
+  topRightCss: { w: 104, h: 58 },
+  bottomRightCss: { w: 232, h: 200 },
+  bottomLeftCss: { w: 170, h: 150 },
+  topGapHalf: 66,                  // half width of the top-centre message column kept free of radar arrows
+  hurtFlash: 0.55,                 // red edge alpha right after a hit
+  lowHull: 0.25,                   // hull fraction under which the red edge pulses
 };
 
 export const RADAR = {
@@ -82,19 +88,14 @@ export const RADAR = {
   distStep: 5,                     // m: distance labels are rounded to this step
   maxDist: 2400,                   // m: longest precomputed label
   refresh: 0.4,                    // s between discovery checks
+  maxArrows: 6,                    // nearest places shown at once (the Albatros always among them)
+  slotW: 32, slotH: 22,            // px an arrow + its label occupy along a horizontal / vertical edge
 };
 
 export const MAP_VIEW = {
   terrainPx: 320,                  // cached terrain canvas size (1 px = 4 tiles)
   margin: 10,
-  blink: 3,                        // Hz of the player marker blink
-};
-
-export const VICTORY_CINE = {
-  fade: 1.2,                       // s: frozen scene fades to black
-  flight: 6.5,                     // s: flight home (starfield streaks, Earth grows)
-  reentry: 3,                      // s: re-entry plasma
-  total: 11.5,                     // s: then `renderer.victoryDone` becomes true
+  pulse: 1.5,                      // Hz of the ring pulsing around the player marker
 };
 
 export const AUDIO_MIX = {
