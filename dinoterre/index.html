@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Dino-Terre">
+<meta name="theme-color" content="#14201a">
+<meta name="format-detection" content="telephone=no">
+<meta name="description" content="Dino-Terre — survie préhistorique en pixel art, monde ouvert, jouable au doigt sur iPhone.">
+<title>Dino-Terre</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div id="status">
+    <div id="who"></div>
+    <div class="bar hp"><i></i><b>Vie</b></div>
+    <div class="bar hunger"><i></i><b>Faim</b></div>
+    <div class="bar stamina"><i></i><b>Endurance</b></div>
+    <div class="bar breath"><i></i><b>Souffle</b></div>
+  </div>
+  <div id="res"></div>
+  <div id="topbtns">
+    <button class="hbtn" data-hud="eat">Manger</button>
+    <button class="hbtn" data-hud="build">Construire</button>
+    <button class="hbtn" data-hud="pack">Meute</button>
+    <button class="hbtn icon" data-hud="menu" aria-label="Menu">II</button>
+  </div>
+  <div id="where"></div>
+  <div id="toast"></div>
+</div>
+
+<!-- touch controls -->
+<div id="controls" class="hidden">
+  <div id="stickzone"></div>
+  <div id="stickbase"><div id="stickknob"></div></div>
+  <div class="tbtn big" data-btn="attack"><span>Mordre</span></div>
+  <div class="tbtn" data-btn="jump"><span>Sauter</span></div>
+  <div class="tbtn" data-btn="climb"><span>Grimper</span></div>
+  <div class="tbtn" data-btn="swim"><span>Nager</span></div>
+  <div class="tbtn pill" data-btn="interact"><span id="ilabel">Interagir</span></div>
+</div>
+
+<!-- build mode bar -->
+<div id="buildbar" class="hidden">
+  <div id="bname"></div>
+  <div id="breason"></div>
+  <div class="row">
+    <button class="hbtn" data-build="up" aria-label="Monter">▲</button>
+    <button class="hbtn" data-build="down" aria-label="Descendre">▼</button>
+    <button class="hbtn ok" data-build="place">Poser</button>
+    <button class="hbtn" data-build="cancel">Annuler</button>
+  </div>
+</div>
+
+<div id="buildmenu" class="panel hidden">
+  <h2>Construire</h2>
+  <div id="blist"></div>
+  <button class="hbtn" data-close="buildmenu">Fermer</button>
+</div>
+
+<div id="pause" class="panel hidden">
+  <h2>Pause</h2>
+  <div id="pstats"></div>
+  <div class="col">
+    <button class="hbtn ok" data-pause="resume">Reprendre</button>
+    <button class="hbtn" data-pause="help">Commandes</button>
+    <button class="hbtn" data-pause="sound">Son : oui</button>
+    <button class="hbtn danger" data-pause="new">Nouvelle partie</button>
+  </div>
+</div>
+
+<div id="help" class="panel hidden">
+  <h2>Commandes</h2>
+  <ul>
+    <li><b>Joystick</b> (moitié gauche) : marcher, viser le mur à escalader, se diriger dans l'eau.</li>
+    <li><b>Sauter</b> : saut (plus long si tu gardes appuyé). Bas + Sauter : traverser une plateforme.</li>
+    <li><b>Grimper</b> (garder appuyé) contre une paroi ou un tronc : monter. Joystick bas : descendre. Sauter : bond mural.</li>
+    <li><b>Nager</b> (garder appuyé) dans l'eau : remonter. Surveille la jauge de souffle.</li>
+    <li><b>Mordre</b> : attaquer devant toi.</li>
+    <li><b>Interagir</b> : dépecer, ramasser des os, apprivoiser, griller, se reposer — ou manger.</li>
+    <li><b>Meute</b> : alterne entre <i>Chasse</i> (les alliés combattent) et <i>Récolte</i> (ils dépècent et te rapportent le butin).</li>
+  </ul>
+  <p>Clavier : flèches/ZQSD, Espace saut, Maj grimper, N nager, J mordre, E interagir.</p>
+  <button class="hbtn" data-close="help">Fermer</button>
+</div>
+
+<div id="title" class="screen">
+  <h1>Dino-Terre</h1>
+  <p class="sub">Chasse, récolte, construis ton abri, forme ta meute. Choisis ton dinosaure :</p>
+  <div id="continue" class="hidden"></div>
+  <div id="cards"></div>
+</div>
+
+<div id="rotate" class="hidden">Tourne ton téléphone en paysage pour mieux jouer ↻</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
