@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>Dérive — planche de sprites</title>
+<style>body{background:#10131c;color:#aab;font:11px monospace;margin:8px}canvas{image-rendering:pixelated;display:block}</style></head>
+<body><canvas id="c"></canvas>
+<script type="module">
+// Sprite sheet: every sprite frame, every tile texture, doors, glows, backdrop / celestial assets.
+// ?z=<zoom> (default 4), ?only=<name prefix> (sprites only).
+import { loadSprites, spriteNames, getSprite, getTileTexture, tileVariantCount, getGlow, GLOW_COLORS, GLOW_RADII, backdrop, celestial } from '../src/sprites.js';
+import { TILES } from '../src/tiles.js';
+const t0 = performance.now();
+loadSprites();
+const buildMs = performance.now() - t0;
+const q = new URLSearchParams(location.search);
+const Z = Number(q.get('z') || 4);
+const only = q.get('only');
+const view = document.getElementById('c');
+const c = document.createElement('canvas'); // drawn tall, then trimmed into the visible canvas
+c.width = Math.max(900, innerWidth - 16); c.height = 6000;
+const g = c.getContext('2d');
+g.imageSmoothingEnabled = false;
+g.fillStyle = '#10131c'; g.fillRect(0, 0, c.width, c.height);
+g.font = '11px monospace';
+let x = 8, y = 20, rowH = 0;
+g.fillStyle = '#7fe'; g.fillText(`loadSprites ${buildMs.toFixed(0)} ms`, 8, 12);
+function place(w, h, label, draw, z = Z) {
+  if (x + w * z > c.width - 8) { x = 8; y += rowH + 16; rowH = 0; }
+  g.fillStyle = '#1c2130'; g.fillRect(x, y, w * z, h * z);
+  draw(x, y, z);
+  g.fillStyle = '#99a'; if (label) g.fillText(label, x, y + h * z + 11);
+  x += w * z + 8; rowH = Math.max(rowH, h * z);
+}
+function newRow() { x = 8; y += rowH + 24; rowH = 0; }
+const seen = new Set();
+for (const n of spriteNames().filter((s) => !only || s.startsWith(only))) {
+  const s = getSprite(n);
+  if (seen.has(s)) continue; // aliases
+  seen.add(s);
+  for (let f = 0; f < s.frames; f++) place(s.w, s.h, f === 0 ? n : '', (px, py, z) => g.drawImage(s.canvas, f * s.w, 0, s.w, s.h, px, py, s.w * z, s.h * z));
+}
+if (!only) {
+  newRow();
+  for (const t of TILES) {
+    const n = tileVariantCount(t.id);
+    for (let v = 0; v < n; v++) place(8, 8, v === 0 ? t.key : '', (px, py, z) => g.drawImage(getTileTexture(t.id, v), px, py, 8 * z, 8 * z));
+  }
+  newRow();
+  for (const k of Object.keys(GLOW_COLORS)) for (const r of GLOW_RADII) place(r * 2 + 1, r * 2 + 1, r === 6 ? k : '', (px, py, z) => { g.fillStyle = '#000'; g.fillRect(px, py, (r * 2 + 1) * z, (r * 2 + 1) * z); g.drawImage(getGlow(k, r), px, py, (r * 2 + 1) * z, (r * 2 + 1) * z); }, 2);
+  newRow();
+  backdrop.layers.forEach((cv, i) => place(cv.width, cv.height, 'stars' + i, (px, py) => { g.fillStyle = '#000'; g.fillRect(px, py, cv.width, cv.height); g.drawImage(cv, px, py); }, 1));
+  for (const [k, cv] of Object.entries(backdrop.nebula)) place(cv.width, cv.height, 'nebula ' + k, (px, py) => { g.fillStyle = '#000'; g.fillRect(px, py, cv.width, cv.height); g.drawImage(cv, px, py); }, 1);
+  place(128, 128, 'static', (px, py) => { g.fillStyle = '#000'; g.fillRect(px, py, 128, 128); g.drawImage(backdrop.staticNoise, px, py); }, 1);
+  newRow();
+  for (const [k, fr] of Object.entries(celestial.sun)) {
+    const co = celestial.corona[k];
+    place(co.width * 2, co.height * 2, 'sun ' + k, (px, py) => {
+      g.fillStyle = '#000'; g.fillRect(px, py, co.width * 2, co.height * 2);
+      g.globalCompositeOperation = 'lighter'; g.drawImage(co, px, py, co.width * 2, co.height * 2); g.globalCompositeOperation = 'source-over';
+      g.drawImage(fr[0], px + co.width - fr[0].width / 2, py + co.height - fr[0].height / 2);
+    }, 1);
+  }
+  for (const [k, fr] of Object.entries(celestial.disk)) place(fr[0].width, fr[0].height, 'disk ' + k, (px, py, z) => { g.fillStyle = '#000'; g.fillRect(px, py, fr[0].width * z, fr[0].height * z); g.drawImage(fr[0], px, py, fr[0].width * z, fr[0].height * z); }, 2);
+  place(celestial.earth.width, celestial.earth.height, 'earth', (px, py, z) => g.drawImage(celestial.earth, px, py, celestial.earth.width * z, celestial.earth.height * z), 2);
+}
+view.width = c.width; view.height = y + rowH + 30;
+view.getContext('2d').drawImage(c, 0, 0);
+document.title = 'ready';
+</script></body></html>
