@@ -21,7 +21,7 @@ function memStorage(init = {}) {
 }
 
 test('workbench costs follow the DESIGN §7 table', () => {
-  const expect = { o2: [20, 45, 90, 160], fuel: [15, 40, 90], thrust: [25, 60, 120, 200], hull: [20, 50, 100, 170], radar: [15, 50, 110], magnet: [15, 40], charges: [40, 90] };
+  const expect = { o2: [20, 25, 45, 80], fuel: [15, 20, 45], thrust: [25, 30, 60, 100], hull: [20, 25, 50, 85], radar: [20, 45], magnet: [15, 20], charges: [40, 45] };
   assert.deepEqual(UPGRADE_KEYS, Object.keys(expect));
   for (const k of UPGRADE_KEYS) {
     assert.deepEqual(UPGRADES[k].costs, expect[k], k);
@@ -197,4 +197,12 @@ test('story and texts', () => {
   }
   assert.equal(causeText('unknown'), DEATH_CAUSES.impact);
   assert.equal(POI_NAMES.orion, 'Station Orion');
+});
+
+test('every onboarding tip key survives a save round-trip (o2, heatShield…)', async () => {
+  const { TIP_KEYS } = await import('../../src/tips.js');
+  const s = defaultSave(3);
+  for (const k of TIP_KEYS) s.tips[k] = 1;
+  const back = migrateSave(JSON.parse(JSON.stringify(s)));
+  for (const k of TIP_KEYS) assert.equal(back.tips[k], 1, k);
 });

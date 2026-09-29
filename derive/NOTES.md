@@ -702,3 +702,21 @@ per frame (Hélios and the dock are the heaviest).
   means overshooting into the heat on the far side. Tuned to be fair for a braking pilot, still the hardest spot.
 - Interiors are a top-down cutaway (visible from outside, dimmed by the darkness layer).
 - The moon rock texture shows its tile-stepped light / dark patches at close range (craters as 8 px blocks).
+
+## Playtest audit round
+
+A headless bot (A* on an 8 px clearance grid, inputs only through the stick / buttons, no teleports) played fresh
+saves to victory. Findings and the changes they led to (see DESIGN §15 "Audit de jouabilité"):
+
+| Area | Before | After |
+|---|---|---|
+| Brake + stick near a black hole | pinned in place, fuel drained, death at every reaction distance | escapes when reacting at 900 or 700 px |
+| Two boosts then hold the stick | 420 px/s forever at no fuel cost | burst decaying to cruise (`PLAYER.overspeedDecay`) |
+| Hélios with shield, brake at the door | 17 hull left | 61–79 hull left (`SUNS.shieldMul` 0.03) |
+| Orion | all deaths of the run, 40-hull lasers, no hull repair | laser 25, turret telegraph 1 s / bolt 12, refill station patches hull to 60 % |
+| Economy | tree 1 565 vs 330–650 earned | tree ≈ 860 (L1 unchanged, L2+ ≈ halved), radar 2 levels on a 1 800 px base |
+| Start | banner sent players north into the Maelström (11/12 bot deaths) | banner points at Colibri, which the radar shows from the dock |
+
+Bugs fixed: `Hud.reset()` clears the radar discovery cache; `migrateSave` keeps tip keys with digits / capitals;
+`updatePlaying` stops the tick when an interaction leaves PLAYING and `onPlayerDeath` ignores deaths in VICTORY.
+The bot now wins seeds 1–3 in about 11–13 min with 0–1 death. Human playtest on a real iPhone is still pending.

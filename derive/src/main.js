@@ -157,7 +157,7 @@ game.onLog = (key) => {
 
 /** Hook: the player died. Carried salvage lost, save written, overlay after the drift. */
 game.onPlayerDeath = (cause) => {
-  if (!game.run) return;
+  if (!game.run || game.state === 'VICTORY') return;
   game.deathInfo = settleDeath(game.save, game.run, cause);
   depositT = 0; depositAcc = 0;
   game.persist();
@@ -284,7 +284,7 @@ game.startGame = () => {
   if (!first) return;
   if (applyStartFlags(game)) return; // ?at / ?x&y: started elsewhere than the Albatros
   const fresh = game.save.stats.deaths === 0 && game.save.salvage === 0 && !game.save.items.keycard;
-  if (fresh) game.banner("ÉPAVE DE L'ALBATROS", 'Rejoins le Module de retour Ulysse, tout au nord');
+  if (fresh) game.banner("ÉPAVE DE L'ALBATROS", 'Fouille les épaves : une navette s\'est échouée au nord-est');
   else game.banner("ÉPAVE DE L'ALBATROS", 'Ton équipement t’attend');
 };
 
@@ -451,6 +451,9 @@ function updatePlaying(dt) {
   if (inp.pressed('pause')) { g.requestPause(); return; }
   if (inp.pressed('map') && !p.dead) { g.mapReturn = 'PLAYING'; g.setState('MAP'); return; }
   p.update(dt);
+  // an interaction may have left PLAYING (victory, Établi, log): stop the tick so
+  // nothing (e.g. a hazard death) settles after the state change
+  if (g.state !== 'PLAYING') { inp.setContextAction(null); return; }
   g.hazards.update(dt);
   g.entities.update(dt);   // runs the dock (deposit via game.deposit, refill, charges)
   g.particles.update(dt);

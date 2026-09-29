@@ -6,7 +6,7 @@
 // to this game, and lookups only read this game's current cache, so Dérive never deletes (or
 // answers from) another app's caches (Gouffre lives next door).
 const PREFIX = 'derive-';
-const VERSION = PREFIX + 'v1';
+const VERSION = PREFIX + 'v2';
 const CORE = [
   './', './index.html', './manifest.webmanifest',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png',

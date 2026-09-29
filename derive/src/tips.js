@@ -56,7 +56,7 @@ export const TIPS = {
   heat: { all: ['Surchauffe : la chaleur ronge la coque', 'Sans bouclier thermique, fais demi-tour'] },
   heatShield: { all: ['Le bouclier thermique réduit la chaleur, sans l’annuler', 'Ne traîne pas dehors : la coque de l’observatoire t’abrite'] },
   flare: { all: ['Éruption ! Le soleil pulse avant de cracher', 'Abrite-toi derrière un rocher ou une coque'] },
-  gravity: { all: ['Gravité critique : le trou noir t’aspire', 'Freine et pousse à l’opposé, vite'] },
+  gravity: { all: ['Le trou noir t’attire : n’approche pas davantage', 'Freine et pousse à l’opposé, vite'] },
   storm: { all: ['Tempête ionique : le bord du secteur', 'Elle ronge la coque : reviens vers le centre'] },
 };
 /** Every tip is shown once (remembered in save.tips). */
@@ -132,7 +132,7 @@ export class Coach {
     if (p.fuelEmpty) this._offer('fuel');
     const h = g.hazards;
     if (h.heatAtPlayer > 0) this._offer(g.save.items.heatshield ? 'heatShield' : 'heat');
-    if (h.gravCritical) this._offer('gravity');
+    if (h.gravCritical || h.gravWarn) this._offer('gravity');
     if (h.stormIntensity > 0.3) this._offer('storm');
     for (let i = 0; i < h.suns.length; i++) {
       const s = h.suns[i];

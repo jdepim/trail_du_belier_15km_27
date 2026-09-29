@@ -33,50 +33,50 @@ for (const k of ITEM_KEYS) ITEMS[k].key = k;
 
 // ------------------------------------------------------------------ workbench upgrades
 
-const RADAR = [900, 1500, 2200, 3000];   // px
+const RADAR = [1800, 2400, 3000];   // px (base 1800: Colibri shows from the dock)
 const MAGNET = [PLAYER.magnetR, 48, 80];  // px
 const metres = (px) => Math.round(px / 8) + ' m';
 
 /** costs[i] = price of level i + 1 (salvage). apply(stats, lv) mutates a fresh baseStats(). */
 export const UPGRADES = {
   o2: {
-    name: "Réservoir d'O2", icon: 'up_o2', max: 4, costs: [20, 45, 90, 160],
+    name: "Réservoir d'O2", icon: 'up_o2', max: 4, costs: [20, 25, 45, 80],
     desc: "Plus d'autonomie en oxygène à chaque sortie.",
     apply(s, lv) { s.o2Max = PLAYER.o2Max + 45 * lv; },
     effect(lv) { return `Autonomie ${PLAYER.o2Max + 45 * lv} s`; },
   },
   fuel: {
-    name: 'Réservoir de carburant', icon: 'up_fuel', max: 3, costs: [15, 40, 90],
+    name: 'Réservoir de carburant', icon: 'up_fuel', max: 3, costs: [15, 20, 45],
     desc: 'Capacité et recharge solaire du carburant.',
     apply(s, lv) { s.fuelMax = PLAYER.fuelMax * (1 + 0.25 * lv); s.rechargeRate = PLAYER.rechargeRate * (1 + 0.25 * lv); },
     effect(lv) { return `Capacité ${Math.round(PLAYER.fuelMax * (1 + 0.25 * lv))} u`; },
   },
   thrust: {
-    name: 'Propulseurs', icon: 'up_thrust', max: 4, costs: [25, 60, 120, 200],
+    name: 'Propulseurs', icon: 'up_thrust', max: 4, costs: [25, 30, 60, 100],
     desc: 'Poussée et vitesse de croisière.',
     apply(s, lv) { s.thrustAccel = PLAYER.thrustAccel * (1 + 0.15 * lv); s.cruiseSpeed = PLAYER.cruiseSpeed * (1 + 0.12 * lv); },
     effect(lv) { return `Poussée ${100 + 15 * lv} %`; },
   },
   hull: {
-    name: 'Blindage', icon: 'up_hull', max: 4, costs: [20, 50, 100, 170],
+    name: 'Blindage', icon: 'up_hull', max: 4, costs: [20, 25, 50, 85],
     desc: 'Coque renforcée : plus de points de coque.',
     apply(s, lv) { s.maxHull = PLAYER.maxHull + 25 * lv; },
     effect(lv) { return `Coque ${PLAYER.maxHull + 25 * lv}`; },
   },
   radar: {
-    name: 'Radar', icon: 'up_radar', max: 3, costs: [15, 50, 110],
+    name: 'Radar', icon: 'up_radar', max: 2, costs: [20, 45],
     desc: 'Portée de détection des lieux.',
     apply(s, lv) { s.radarRange = RADAR[lv]; },
     effect(lv) { return `Portée ${metres(RADAR[lv])}`; },
   },
   magnet: {
-    name: 'Aimant', icon: 'up_magnet', max: 2, costs: [15, 40],
+    name: 'Aimant', icon: 'up_magnet', max: 2, costs: [15, 20],
     desc: 'Attire la ferraille et les recharges de plus loin.',
     apply(s, lv) { s.magnetR = MAGNET[lv]; },
     effect(lv) { return `Rayon ${metres(MAGNET[lv])}`; },
   },
   charges: {
-    name: 'Soute à charges', icon: 'up_charges', max: 2, costs: [40, 90], requires: 'explosives',
+    name: 'Soute à charges', icon: 'up_charges', max: 2, costs: [40, 45], requires: 'explosives',
     desc: 'Une charge explosive de plus par sortie.',
     apply(s, lv) { s.maxCharges = PLAYER.maxCharges + lv; },
     effect(lv) { return `${PLAYER.maxCharges + lv} charges`; },
@@ -259,7 +259,7 @@ export function migrateSave(raw) {
   out.settings.assist = se.assist !== false;
   out.settings.shake = se.shake !== false;
   out.settings.tips = se.tips !== false;
-  for (const [k, v] of Object.entries(obj(r.tips))) if (v && /^[a-z_]{1,24}$/.test(k)) out.tips[k] = 1;
+  for (const [k, v] of Object.entries(obj(r.tips))) if (v && /^[A-Za-z0-9_]{1,24}$/.test(k)) out.tips[k] = 1;
   return out;
 }
 

@@ -235,6 +235,7 @@ const CENTER_A = { outline: '#05060b', align: 'center', alpha: 1 };
 const WARN = [
   { key: 'o2', text: 'O2 BAS', color: '#6fe6ff' },
   { key: 'heat', text: 'SURCHAUFFE', color: '#ff7a2a' },
+  { key: 'pull', text: 'ATTRACTION FORTE', color: '#c08aff' },
   { key: 'grav', text: 'GRAVITÉ CRITIQUE', color: '#c08aff' },
   { key: 'fuel', text: 'CARBURANT VIDE', color: '#ffb347' },
   { key: 'storm', text: 'TEMPÊTE IONIQUE', color: '#5fe8d0' },
@@ -272,6 +273,7 @@ export class Hud {
     const p = this.game.player;
     this.hullShown = p ? p.hull : 100;
     this.bankShown = -1;
+    this.discovered.fill(0); // rebuilt from the current fog on the next update (a new / imported save must not inherit it)
     this.discT = 0;
   }
 
@@ -376,6 +378,7 @@ export class Hud {
     switch (WARN[i].key) {
       case 'o2': return !!p.o2Low;
       case 'heat': return !!(h && h.heatAtPlayer > 0.5);
+      case 'pull': return !!(h && h.gravWarn);
       case 'grav': return !!(h && h.gravCritical);
       case 'fuel': return !!p.fuelEmpty;
       case 'storm': return !!(h && h.inStorm);

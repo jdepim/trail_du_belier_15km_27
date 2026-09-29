@@ -89,12 +89,13 @@ export const PLAYER = {
   cruiseFlame: 0.25,      // throttle shown (flame, sound) while the cruise rule absorbs the thrust
   assistDrag: 0.35,       // 1/s damping with Assistance inertielle, no stick, no brake
   brakeDecel: 260,        // px/s² opposed to the velocity
+  overspeedDecay: 0.8,    // 1/s: with the stick held, speed above cruise decays back towards cruise
   boostImpulse: 170,      // px/s added in the stick (or facing) direction
   boostCooldown: 1.2,
   boostFuel: 22,
   fuelThrust: 6,          // u/s at full stick
-  fuelBrake: 12,          // u/s
-  rechargeDelay: 1.5,     // s without thrust / brake before the solar recharge starts
+  fuelBrake: 8,           // u/s
+  rechargeDelay: 1.0,     // s without thrust / brake before the solar recharge starts
   rechargeRate: 3,        // u/s (base, × Réservoir de carburant)
   sunRechargeMul: 3,      // near a sun (SUNS.rechargeRMul × heatR)
   maxHull: 100,
@@ -138,7 +139,7 @@ export const SUNS = {
   influence: 1000,
   heatMax: 840,
   heatExp: 2,
-  shieldMul: 0.06,        // DESIGN target × 0.1: × 0.06 keeps a cruise-speed shielded approach to Hélios near 40 hull
+  shieldMul: 0.03,        // DESIGN target × 0.1: × 0.03 so braking at the Hélios door (overshoot included) keeps ~60 hull
   shelteredMul: 0.01,
   rechargeRMul: 1.15,     // fuel recharge × PLAYER.sunRechargeMul within this × heatR
   flare: {
@@ -185,8 +186,8 @@ export const BELT = {
   iceChance: 0.25,
   smallChance: 0.35,      // chance a cluster is made of fragile asteroid_small
   keepOut: 220,           // px of clearance around structures / satellites
-  orbitSpeed: 30,         // px/s tangential (counter-clockwise on screen)
-  density: 1 / 60000,     // moving asteroids per px² of belt inside the window
+  orbitSpeed: 40,         // px/s tangential (counter-clockwise on screen)
+  density: 1 / 40000,     // moving asteroids per px² of belt inside the window
 };
 
 // ---------------------------------------------------------------- moving asteroids (§6.3)
@@ -203,12 +204,13 @@ export const ASTEROIDS = {
   restitution: 0.6,
   hitCooldown: 0.4,       // s between two damaging hits of the same asteroid
   damageMul: 1,           // × PLAYER impact formula on the relative normal speed
+  safeSpeed: 50,          // px/s of relative normal speed an asteroid hit absorbs (the player's is for walls)
   splitSpeed: 60,         // px/s given to the halves of a split asteroid
   spiral: {               // around the Maelström
     rMin: 260, rMax: 1150,
     tangential: 75,       // px/s
     inward: 16,           // px/s
-    count: 14,
+    count: 24,
     windowR: 1600,        // active while the player is this close to the hole
   },
 };
@@ -225,16 +227,17 @@ export const BOUNDARY = {
 export const HAZARDS = {
   turret: {
     range: 190, bodyR: 6, turnRate: 2.4, aimTolerance: 0.12, scanSpeed: 0.7,
-    telegraph: 0.7, cooldown: 1.8, boltSpeed: 110, boltLife: 3.2, boltR: 3, boltDamage: 14,
+    telegraph: 1.0, cooldown: 1.8, boltSpeed: 110, boltLife: 3.2, boltR: 3, boltDamage: 12,
     losEvery: 6,          // ticks between line-of-sight checks
   },
   bolts: 32,
-  laser: { off: 1.6, warn: 0.6, on: 1.4, damage: 40, halfWidth: 2.5, push: 150 },
+  laser: { off: 1.6, warn: 0.6, on: 1.4, damage: 25, halfWidth: 2.5, push: 150 },
   vent: { off: 2.2, warn: 0.7, on: 1.6, force: 480, length: 88, halfWidth: 12 },
   charge: {
     pool: 6, fuse: 2.5, r: 3, restitution: 0.5, beepEvery: 0.5,
-    blastR: 40, power: 45, pushR: 64, push: 300,
+    blastR: 48, power: 45, pushR: 64, push: 300,
   },
+  gravWarnRatio: 0.4,     // ATTRACTION FORTE once gravity exceeds this share of the thrust
   explosions: 8,          // FX records kept in hazards.explosions
   explosionLife: 0.6,
 };
@@ -272,6 +275,7 @@ export const ECONOMY = {
   fuelPickup: 50,         // u
   repairPickup: 30,       // hull
   dock: { hull: 40, o2: 60, fuel: 80 }, // refill per second inside the dock
+  refillHullMin: 0.6,     // the Orion refill station also patches the hull up to this share
 };
 
 // ---------------------------------------------------------------- map fog (§7)

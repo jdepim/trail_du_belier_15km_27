@@ -408,3 +408,18 @@ ramassage, interactions) → `particles.update` → `camera.update` → `hud.upd
 - Police bitmap : glyphes `Ö` `Ä`, virgule lisible, `hasGlyphs()` ; astuce `heatShield` (bouclier possédé).
 - Bouton contextuel 124 × 46 px CSS. Outils `tools/feel.mjs` (`npm run feel`) et `tools/tour.mjs` (`npm run tour`).
 - Tests e2e étendus (asphyxie, aimant, trou noir, bouclier / ancre, session clavier sur ordinateur).
+
+### Audit de jouabilité (partie complète jouée par un robot, sans téléport)
+- **Frein + stick** : le frein n'annule plus que la part de la vitesse qui ne va pas dans le sens du stick (s'échapper
+  d'une attraction en freinant et poussant à l'opposé fonctionne). **Décroissance de survitesse** (`PLAYER.overspeedDecay`
+  0,8 /s) tant que le stick est tenu : le boost devient une accélération brève, la gravité ne « catapulte » plus.
+- Avertissement précoce **ATTRACTION FORTE** (gravité > 40 % de la poussée, ~960 px du Maelström) avant GRAVITÉ CRITIQUE.
+- Bannière de départ : « Fouille les épaves : une navette s'est échouée au nord-est » (ne plus envoyer vers le trou noir).
+  Radar de base 1 800 px (Colibri visible depuis le dock), 2 niveaux 2 400 / 3 000.
+- Hélios : bouclier × 0,03 (freiner à la porte laisse ~60–80 de coque au lieu de 17).
+- Orion : laser 25 (au lieu de 40), tourelles télégraphe 1 s / tir 12, le Ravitaillement répare aussi la coque jusqu'à 60 %.
+- Ceinture : chocs d'astéroïde amortis à 50 px/s (au lieu de 95), densité 1/40 000, orbite 40 px/s ; 24 astéroïdes autour du Maelström.
+- Carburant : frein 8 u/s, recharge après 1 s. Charges : rayon 48 px (l'éboulis de Tycho saute d'un coup).
+- Économie : niveaux 2+ environ divisés par deux (arbre complet ≈ 860 au lieu de 1 565, à la portée d'une partie complète).
+- Corrections : le radar oublie les lieux découverts après Effacer / Transférer ; les astuces `o2` et `heatShield` sont
+  bien mémorisées ; une mort dans le même pas que « Embarquer » n'est plus comptée après la victoire.

@@ -33,12 +33,15 @@ test('cruise rule: thrust alone never exceeds the cruise speed, but can brake / 
   tick(g, 60 * 3, DT, { only: 'player' });
   assert.ok(p.speed <= PLAYER.cruiseSpeed + 1e-6, `speed ${p.speed}`);
   assert.ok(p.speed > PLAYER.cruiseSpeed - 1, 'reaches cruise');
-  // above cruise (e.g. after a boost): pushing forward adds nothing
+  // above cruise (e.g. after a boost): pushing forward adds nothing and the excess bleeds
+  // back towards cruise (overspeed decay), never below it
   p.teleport(px(10), px(60));
   p.vx = 300;
   tick(g, 20, DT, { only: 'player' });
-  assert.ok(p.vx <= 300 + 1e-6 && p.vx > 299, `no speed gain above cruise (${p.vx})`);
+  const expected = PLAYER.cruiseSpeed + (300 - PLAYER.cruiseSpeed) * Math.exp(-PLAYER.overspeedDecay * 20 * DT);
+  assert.ok(p.vx <= 300 + 1e-6 && Math.abs(p.vx - expected) < 2, `overspeed decays (${p.vx} vs ${expected})`);
   // steering sideways keeps the speed but turns the velocity
+  p.vx = 300; p.vy = 0;
   g.input.stick(0, 1);
   tick(g, 20, DT, { only: 'player' });
   assert.ok(p.speed <= 300 + 1e-6);
@@ -313,4 +316,21 @@ test('run time and distance accumulate', () => {
   near(g.run.time, 1, 1e-9, 'time');
   assert.ok(g.run.distance > 40 && g.run.distance < 61, `distance ${g.run.distance}`);
   assert.ok((ORIGIN + 60) * TILE > 0);
+});
+
+test('Frein + stick: the brake keeps the velocity along the stick (escaping a pull is possible)', () => {
+  const g = open();
+  const p = g.player;
+  p.reset(px(10), px(60));
+  p.vx = 100; p.vy = 0;             // drifting east
+  g.input.stick(-1, 0);             // push west
+  g.input.hold('brake', true);
+  tick(g, 60, DT, { only: 'player' });
+  assert.ok(p.vx < -20, `stick direction wins over the brake (${p.vx})`);
+  // sideways drift is killed while pushing west
+  p.teleport(px(40), px(60));
+  p.vx = -50; p.vy = 80;
+  tick(g, 30, DT, { only: 'player' });
+  assert.ok(Math.abs(p.vy) < 1, `off-axis drift braked (${p.vy})`);
+  assert.ok(p.vx < -50, 'along-stick speed kept');
 });

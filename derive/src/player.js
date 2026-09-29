@@ -32,7 +32,7 @@ export function baseStats() {
     rechargeRate: PLAYER.rechargeRate,
     thrustAccel: PLAYER.thrustAccel,
     cruiseSpeed: PLAYER.cruiseSpeed,
-    radarRange: 900,
+    radarRange: 1800,
     magnetR: PLAYER.magnetR,
     maxCharges: PLAYER.maxCharges,
   };
@@ -191,11 +191,18 @@ export class Player {
     }
     // ---- brake: retro-rockets opposed to the velocity until the stop
     const wantBrake = inp ? inp.held('brake') : false;
-    const s = Math.hypot(this.vx, this.vy);
+    // with the stick held, the brake only kills the part of the velocity that does not go
+    // where the stick points (so "Frein + pousse à l'opposé" escapes instead of pinning you)
+    let bvx = this.vx, bvy = this.vy;
+    if (stick) {
+      const along = Math.max(0, bvx * ux + bvy * uy);
+      bvx -= ux * along; bvy -= uy * along;
+    }
+    const s = Math.hypot(bvx, bvy);
     this.braking = wantBrake && hadFuel && s > 0.5;
     if (this.braking) {
       const dv = Math.min(s, PLAYER.brakeDecel * dt);
-      this.vx -= (this.vx / s) * dv; this.vy -= (this.vy / s) * dv;
+      this.vx -= (bvx / s) * dv; this.vy -= (bvy / s) * dv;
       this.fuel -= PLAYER.fuelBrake * dt;
       burning = true;
       if (inp.pressed('brake')) this._sound('brake');
@@ -226,6 +233,15 @@ export class Player {
     if (assist && !stick && !this.braking) {
       const k = Math.exp(-PLAYER.assistDrag * dt);
       this.vx *= k; this.vy *= k;
+    }
+    // ---- overspeed decay: while steering, speed above cruise (boost, gravity) bleeds back
+    // towards cruise, so the boost is a burst and gravity wells cannot fling a held stick
+    if (stick) {
+      const sp = Math.hypot(this.vx, this.vy), c = st.cruiseSpeed;
+      if (sp > c) {
+        const k = (c + (sp - c) * Math.exp(-PLAYER.overspeedDecay * dt)) / sp;
+        this.vx *= k; this.vy *= k;
+      }
     }
     // ---- gravity (suns, black holes × Ancre, moon)
     if (g.hazards) {

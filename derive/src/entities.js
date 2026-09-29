@@ -271,7 +271,7 @@ export class Entities {
     for (const c of this.crates) if (!c.opened) this._consider('crate', c.x, c.y, R, c, pl);
     for (const t of this.terminals) this._consider('terminal', t.x, t.y, R, t, pl);
     for (const sat of this.satellites) if (!sat.active) this._consider('satellite', sat.x, sat.y, INTERACT.satelliteRange, sat, pl);
-    if (pl.o2 < s.o2Max - 0.5 || pl.fuel < s.fuelMax - 0.5) for (const r of this.refills) this._consider('refill', r.x, r.y, R, r, pl);
+    if (pl.o2 < s.o2Max - 0.5 || pl.fuel < s.fuelMax - 0.5 || pl.hull < s.maxHull * ECONOMY.refillHullMin - 0.5) for (const r of this.refills) this._consider('refill', r.x, r.y, R, r, pl);
     if (pl.hasItem('explosives') && pl.charges < s.maxCharges) for (const l of this.lockers) this._consider('locker', l.x, l.y, R, l, pl);
     if (this.workbench) this._consider('workbench', this.workbench.x, this.workbench.y, R, this.workbench, pl);
     if (this.capsule) this._consider('capsule', this.capsule.x, this.capsule.y, R, this.capsule, pl);
@@ -326,8 +326,9 @@ export class Entities {
         break;
       case 'refill':
         pl.o2 = pl.stats.o2Max; pl.fuel = pl.stats.fuelMax; pl.fuelEmpty = false;
+        pl.hull = Math.max(pl.hull, pl.stats.maxHull * ECONOMY.refillHullMin);
         this._sound('refill');
-        if (g.toast) g.toast('Oxygène et carburant au maximum.', TOAST_INFO);
+        if (g.toast) g.toast('Oxygène et carburant au maximum, coque réparée.', TOAST_INFO);
         return true;
       case 'locker':
         pl.charges = pl.stats.maxCharges;

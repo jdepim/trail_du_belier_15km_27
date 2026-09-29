@@ -117,7 +117,7 @@ export class Hazards {
     for (const c of this.charges) c.active = false;
     for (const e of this.explosions) e.active = false;
     this.heatAtPlayer = 0; this.heatLevel = 0; this.nearSun = false;
-    this.gravCritical = false; this.bhProximity = 0; this.stormIntensity = 0; this.inStorm = false;
+    this.gravCritical = false; this.gravWarn = false; this.bhProximity = 0; this.stormIntensity = 0; this.inStorm = false;
     this.beltTarget = 0; this.spiralTarget = 0;
     this._updateCycles(true);
   }
@@ -187,6 +187,8 @@ export class Hazards {
     this._updateCharges(dt);
     for (const e of this.explosions) if (e.active && (e.t += dt) >= e.life) e.active = false;
     this.gravCritical = !!(p && !p.dead && p.gravMag > p.stats.thrustAccel);
+    // early warning, well outside the point of no return
+    this.gravWarn = !!(p && !p.dead && !this.gravCritical && p.gravMag > p.stats.thrustAccel * HAZARDS.gravWarnRatio);
   }
 
   _updateSuns(dt, p) {
@@ -529,8 +531,8 @@ export class Hazards {
         if (n > 0 && a.hitCd <= 0) {
           a.hitCd = A.hitCooldown;
           const nx = (a.x - p.x) / (p.r + a.r), ny = (a.y - p.y) / (p.r + a.r);
-          if (n > PLAYER.impactSafeSpeed) {
-            p.damage((n - PLAYER.impactSafeSpeed) * PLAYER.impactDamage * A.damageMul, 'impact');
+          if (n > A.safeSpeed) {
+            p.damage((n - A.safeSpeed) * PLAYER.impactDamage * A.damageMul, 'impact');
             this._sound('impact', Math.min(1, n / 300), 1, 'rock');
             this._particles('spark', p.x + nx * p.r, p.y + ny * p.r, 0, 0, 8, n / 200, 0, -nx, -ny);
             if (n > PLAYER.impactShake) {
@@ -538,7 +540,7 @@ export class Hazards {
               if (this.game.hitStop) this.game.hitStop(HIT_STOP.impact);
             }
           } else if (n > 25) {
-            this._sound('bump', Math.min(1, n / PLAYER.impactSafeSpeed), 1, 'rock');
+            this._sound('bump', Math.min(1, n / A.safeSpeed), 1, 'rock');
           }
         }
       }
